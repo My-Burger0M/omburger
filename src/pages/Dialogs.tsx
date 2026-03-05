@@ -12,14 +12,18 @@ import { useSearchParams } from 'react-router-dom';
 import ConfirmationModal from '../components/ConfirmationModal';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Howl } from 'howler';
 import { DateTime } from 'luxon';
 
 // Sound for new messages
-const notificationSound = new Howl({
-  src: ['https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'],
-  volume: 0.5
-});
+const playNotificationSound = () => {
+  try {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(e => console.error('Error playing sound:', e));
+  } catch (e) {
+    console.error('Audio API not supported', e);
+  }
+};
 
 interface Chat {
   id: string;
@@ -363,7 +367,8 @@ export default function Dialogs() {
               const chat = chats.find(c => c.id === recipientId);
               if (!chat) continue;
 
-              await axios.post('/api/messages/send', {
+              const API_URL = import.meta.env.VITE_API_URL || '';
+              await axios.post(`${API_URL}/api/messages/send`, {
                 chatId: chat.chatId,
                 platform: chat.platform,
                 text: note.text,
@@ -428,7 +433,7 @@ export default function Dialogs() {
         if (change.type === 'modified') {
           const data = change.doc.data();
           if (data.unreadCount > 0 && data.lastMessageAt?.toMillis() > Date.now() - 5000) {
-             notificationSound.play();
+             playNotificationSound();
           }
         }
       });
@@ -490,7 +495,8 @@ export default function Dialogs() {
     setShowKeyboardBuilder(false);
 
     try {
-      await axios.post('/api/messages/send', {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      await axios.post(`${API_URL}/api/messages/send`, {
         chatId: chat.chatId,
         platform: chat.platform,
         text: messageText,

@@ -13,7 +13,12 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
+  app.use(cors({
+    origin: true, // Allow all origins
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -21,8 +26,18 @@ async function startServer() {
   try {
     await signInAnonymously(auth);
     console.log('Server signed in to Firebase anonymously');
-  } catch (error) {
-    console.error('Error signing in to Firebase:', error);
+  } catch (error: any) {
+    if (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed') {
+      console.warn('\n⚠️ WARNING: Firebase Anonymous Auth failed.');
+      console.warn('Reason: The operation is restricted (auth/admin-restricted-operation).');
+      console.warn('To fix this:');
+      console.warn('1. Go to Firebase Console -> Authentication -> Sign-in method');
+      console.warn('2. Enable the "Anonymous" provider');
+      console.warn('3. If using Identity Platform, ensure "Enable create (sign-up)" is checked');
+      console.warn('4. Check API Key restrictions in Google Cloud Console (ensure no IP/Referrer blocks for this server)\n');
+    } else {
+      console.error('Error signing in to Firebase:', error);
+    }
   }
 
   // --- Bot Setup ---
@@ -121,8 +136,18 @@ async function startServer() {
           }
 
           // Initialize Telegram if token exists
-          if (tokens.tg && !tgBot) {
-             // ... (rest of TG init logic from DB) ...
+          if (tokens.tg) {
+            // Stop existing instance if it exists (even if we didn't create it in this loop, though we reset it at start)
+            if (tgBot) {
+                try {
+                    console.log('Stopping previous Telegram bot instance...');
+                    tgBot.stop();
+                } catch (e) {
+                    console.error('Error stopping previous TG bot:', e);
+                }
+                tgBot = null;
+            }
+
             console.log('Found TG token for user', userDoc.id);
             tgBot = new Telegraf(tokens.tg);
 
@@ -174,7 +199,7 @@ async function startServer() {
                       lastTgError = err.message || String(err);
                     }
                   });
-              }, 2000); // 2 second delay
+              }, 3000); // Increased to 3 second delay
             } else {
               console.log('Telegram initialized for Webhooks (Vercel mode)');
             }

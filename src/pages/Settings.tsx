@@ -62,7 +62,8 @@ export default function Settings() {
 
   const checkServer = async () => {
     try {
-      await axios.get('/api/health');
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      await axios.get(`${API_URL}/api/health`);
       setServerStatus('ok');
     } catch (e) {
       console.error('Server check failed:', e);
@@ -72,7 +73,8 @@ export default function Settings() {
 
   const checkBotStatus = async () => {
     try {
-      const res = await axios.get('/api/bot/status');
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await axios.get(`${API_URL}/api/bot/status`);
       setBotStatus(res.data);
     } catch (e) {
       console.error('Bot status check failed:', e);
@@ -137,7 +139,8 @@ export default function Settings() {
 
       // Restart bots on server
       try {
-        await axios.post('/api/bot/restart', { userId: currentUser.uid });
+        const API_URL = import.meta.env.VITE_API_URL || '';
+        await axios.post(`${API_URL}/api/bot/restart`, { userId: currentUser.uid });
         alert('Настройки сохранены и боты перезапущены!');
         checkBotStatus(); // Refresh status
       } catch (e) {
@@ -158,9 +161,10 @@ export default function Settings() {
       // Call the local server endpoint
       let payload = {};
       let endpoint = '';
+      const API_URL = import.meta.env.VITE_API_URL || '';
 
       if (testPlatform === 'tg') {
-        endpoint = '/api/webhook/tg';
+        endpoint = `${API_URL}/api/webhook/tg`;
         payload = {
           message: {
             chat: { id: 123456789 },
@@ -169,7 +173,7 @@ export default function Settings() {
           }
         };
       } else if (testPlatform === 'vk') {
-        endpoint = '/api/webhook/vk';
+        endpoint = `${API_URL}/api/webhook/vk`;
         payload = {
           type: 'message_new',
           object: {
@@ -180,7 +184,7 @@ export default function Settings() {
           }
         };
       } else if (testPlatform === 'max') {
-        endpoint = '/api/webhook/max';
+        endpoint = `${API_URL}/api/webhook/max`;
         payload = {
           chatId: 'max_123',
           text: testMessage,
