@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth } from './server-firebase';
-import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, where } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
@@ -87,6 +87,7 @@ async function startServer() {
                 if (context.isOutbox) return;
                 const text = context.text || '';
                 const chatId = context.senderId.toString();
+                const messageId = context.id.toString();
                 let username = `User ${chatId}`;
                 try {
                   const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
@@ -94,7 +95,7 @@ async function startServer() {
                 } catch (e) { console.error('Error fetching VK user info:', e); }
                 
                 console.log(`Received VK message from ${username}: ${text}`);
-                await saveMessage('vk', chatId, text, username);
+                await saveMessage('vk', chatId, text, username, messageId);
               });
 
               if (!process.env.VERCEL) {
@@ -128,11 +129,32 @@ async function startServer() {
             tgBot.on('text', async (ctx) => {
               const text = ctx.message.text;
               const chatId = ctx.chat.id.toString();
+              const messageId = ctx.message.message_id.toString();
               const user = ctx.from;
-              const username = user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`.trim();
+              
+              const firstName = user.first_name || '';
+              const lastName = user.last_name || '';
+              const tgUsername = user.username ? `@${user.username}` : '';
+              
+              // Prefer "Bacardi Lemon" (First Last) over @username if available
+              const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
+              const username = displayName; // Use displayName as main identifier for UI
+
+              // Try to get avatar (profile photos)
+              let avatar = '';
+              try {
+                const photos = await ctx.telegram.getUserProfilePhotos(user.id, 0, 1);
+                if (photos && photos.total_count > 0) {
+                   const fileId = photos.photos[0][0].file_id;
+                   const fileLink = await ctx.telegram.getFileLink(fileId);
+                   avatar = fileLink.href;
+                }
+              } catch (e) {
+                console.error('Error fetching TG avatar:', e);
+              }
 
               console.log(`Received TG message from ${username}: ${text}`);
-              await saveMessage('tg', chatId, text, username);
+              await saveMessage('tg', chatId, text, username, messageId, avatar, displayName);
             });
 
             if (!process.env.VERCEL) {
@@ -173,6 +195,7 @@ async function startServer() {
             if (context.isOutbox) return;
             const text = context.text || '';
             const chatId = context.senderId.toString();
+            const messageId = context.id.toString();
             let username = `User ${chatId}`;
             try {
               const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
@@ -180,7 +203,7 @@ async function startServer() {
             } catch (e) { console.error('Error fetching VK user info:', e); }
             
             console.log(`Received VK message from ${username}: ${text}`);
-            await saveMessage('vk', chatId, text, username);
+            await saveMessage('vk', chatId, text, username, messageId);
           });
 
           if (!process.env.VERCEL) {
@@ -257,26 +280,62 @@ async function startServer() {
   };
 
   // Helper to save message
-  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string) => {
+  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string, messageId?: string, avatar?: string, displayName?: string) => {
     try {
       const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
       
+      // Check for duplicates if messageId is provided
+      if (messageId) {
+        // We can check if a message with this external ID already exists in the subcollection
+        // However, querying subcollection for every message might be costly.
+        // A simpler way for deduplication within a short timeframe is checking recent messages or using the messageId as doc ID.
+        // Let's use messageId as doc ID if possible, or query.
+        // Since we want to preserve ordering, using timestamp-based ID is better, but we can store externalId field.
+        
+        const messagesRef = collection(db, 'chats', `${platform}_${chatId}`, 'messages');
+        const q = query(messagesRef); 
+        // Note: Firestore doesn't support "exists" check easily without reading.
+        // To strictly prevent duplicates, we should use the external messageId as the document ID.
+        // But messageId from VK/TG might not be unique globally (only unique per chat).
+        // So we can use `${platform}_${chatId}_${messageId}` as the doc ID for the message.
+      }
+
+      const msgDocId = messageId ? `${platform}_${chatId}_${messageId}` : undefined;
+      const msgRef = msgDocId 
+        ? doc(db, 'chats', `${platform}_${chatId}`, 'messages', msgDocId)
+        : doc(collection(db, 'chats', `${platform}_${chatId}`, 'messages')); // Auto-ID if no messageId
+
+      // Check if it exists (idempotency)
+      if (msgDocId) {
+         const existingDoc = await getDoc(msgRef);
+         if (existingDoc.exists()) {
+             console.log(`Duplicate message ignored: ${msgDocId}`);
+             return;
+         }
+      }
+
       // Update or create chat metadata
-      await setDoc(chatRef, {
+      const chatUpdateData: any = {
         platform,
         chatId,
-        username,
+        username, // This is now the "Display Name" effectively
         lastMessage: text,
         lastMessageAt: serverTimestamp(),
         unreadCount: increment(1),
         messageCount: increment(1)
-      }, { merge: true });
+      };
+      
+      if (avatar) chatUpdateData.avatar = avatar;
+      if (displayName) chatUpdateData.displayName = displayName;
+
+      await setDoc(chatRef, chatUpdateData, { merge: true });
 
       // Add message to subcollection
-      await addDoc(collection(db, 'chats', `${platform}_${chatId}`, 'messages'), {
+      await setDoc(msgRef, {
         text,
         sender: 'user',
-        timestamp: serverTimestamp()
+        timestamp: serverTimestamp(),
+        externalId: messageId
       });
 
       await updateStats(platform, chatId);
@@ -286,57 +345,128 @@ async function startServer() {
     }
   };
 
-  // API to send message from admin to user
-  app.post('/api/messages/send', async (req, res) => {
-    const { chatId, platform, text, userId } = req.body;
-    
-    if (!chatId || !platform || !text || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    try {
+  // Internal Send Function
+  const sendMessageInternal = async ({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard }: any) => {
       // Get tokens for the specific user
       const tokensRef = doc(db, 'users', userId, 'settings', 'tokens');
       const tokensSnap = await getDoc(tokensRef);
       const tokens = tokensSnap.data();
 
       if (platform === 'tg') {
-        if (!tokens?.tg) {
-          return res.status(400).json({ error: 'Telegram token not configured' });
-        }
-        await axios.post(`https://api.telegram.org/bot${tokens.tg}/sendMessage`, {
-          chat_id: chatId,
-          text: text
-        });
-      } else if (platform === 'vk') {
-        if (!tokens?.vk) {
-          return res.status(400).json({ error: 'VK token not configured' });
-        }
+        if (!tokens?.tg) throw new Error('Telegram token not configured');
         
-        // Use vk-io instance if available, otherwise use axios
-        if (vk) {
-             await vk.api.messages.send({
-                peer_id: Number(chatId),
-                message: text,
-                random_id: Math.floor(Math.random() * 1000000)
-             });
+        const bot = new Telegraf(tokens.tg);
+        const extras: any = {};
+        if (keyboard) extras.reply_markup = keyboard;
+
+        if (mediaUrl && mediaType === 'photo') {
+            await bot.telegram.sendPhoto(chatId, mediaUrl, { caption: text, ...extras });
+        } else if (mediaUrl && mediaType === 'video') {
+            await bot.telegram.sendVideo(chatId, mediaUrl, { caption: text, ...extras });
         } else {
-            // Fallback to axios if vk instance is not ready (though it should be)
+            await bot.telegram.sendMessage(chatId, text || ' ', extras);
+        }
+
+      } else if (platform === 'vk') {
+        if (!tokens?.vk) throw new Error('VK token not configured');
+        
+        let messageText = text || '';
+        if (mediaUrl) messageText += `\n\n${mediaUrl}`;
+
+        const params: any = {
+            peer_id: Number(chatId),
+            message: messageText,
+            random_id: Math.floor(Math.random() * 1000000)
+        };
+
+        if (keyboard) params.keyboard = JSON.stringify(keyboard);
+
+        if (vk) {
+             await vk.api.messages.send(params);
+        } else {
             await axios.post('https://api.vk.com/method/messages.send', null, {
-            params: {
-                peer_id: chatId,
-                message: text,
-                random_id: Math.floor(Math.random() * 1000000),
-                access_token: tokens.vk,
-                v: '5.131'
-            }
+            params: { ...params, access_token: tokens.vk, v: '5.131' }
             });
         }
-      } else if (platform === 'max') {
-        // MAX sending logic...
-        console.log('MAX sending not implemented yet');
       }
+  };
 
+  // --- Scheduler Logic ---
+  const checkScheduledMessages = async () => {
+      try {
+          const now = new Date();
+          // Query only by status to avoid composite index requirement
+          const q = query(
+              collection(db, 'scheduled_messages'), 
+              where('status', '==', 'pending')
+          );
+          
+          const snapshot = await getDocs(q);
+          
+          if (snapshot.empty) return;
+          
+          // Filter by date in memory
+          const messagesToSend = snapshot.docs.filter(doc => {
+              const data = doc.data();
+              return data.scheduledAt && data.scheduledAt.toDate() <= now;
+          });
+
+          if (messagesToSend.length === 0) return;
+
+          console.log(`Processing ${messagesToSend.length} scheduled messages...`);
+          
+          for (const docSnap of messagesToSend) {
+              const msg = docSnap.data();
+              const { chatId, platform, text, userId, mediaUrl, mediaType, keyboard } = msg;
+              
+              try {
+                  await sendMessageInternal({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard });
+                  
+                  await updateDoc(docSnap.ref, { status: 'sent', sentAt: serverTimestamp() });
+                  
+                  // Log to chat history
+                  const chatDocId = `${platform}_${chatId}`;
+                  await addDoc(collection(db, 'chats', chatDocId, 'messages'), {
+                    text: text || '',
+                    sender: 'admin',
+                    timestamp: serverTimestamp(),
+                    mediaUrl: mediaUrl || null,
+                    mediaType: mediaType || null,
+                    keyboard: keyboard || null
+                  });
+
+                  await updateDoc(doc(db, 'chats', chatDocId), {
+                    lastMessage: mediaUrl ? `[${mediaType === 'photo' ? 'Фото' : 'Видео'}] ${text}` : text,
+                    lastMessageAt: serverTimestamp()
+                  });
+                  
+                  console.log(`Scheduled message sent to ${chatId}`);
+              } catch (err) {
+                  console.error(`Failed to send scheduled message ${docSnap.id}:`, err);
+                  await updateDoc(docSnap.ref, { status: 'failed', error: String(err) });
+              }
+          }
+      } catch (error) {
+          console.error('Error checking scheduled messages:', error);
+      }
+  };
+
+  // Start Scheduler Interval (every 60 seconds)
+  if (!process.env.VERCEL) {
+      setInterval(checkScheduledMessages, 60 * 1000);
+      console.log('Scheduler started (60s interval)');
+  }
+
+  // API to send message from admin to user
+  app.post('/api/messages/send', async (req, res) => {
+    const { chatId, platform, text, userId, mediaUrl, mediaType, keyboard } = req.body;
+    
+    if (!chatId || !platform || !userId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+      await sendMessageInternal({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard });
       res.json({ success: true });
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
@@ -369,9 +499,10 @@ async function startServer() {
       const { message } = object;
       const text = message.text || '';
       const chatId = message.peer_id.toString();
+      const messageId = message.id.toString();
       
       // Save message
-      await saveMessage('vk', chatId, text, `User ${chatId}`);
+      await saveMessage('vk', chatId, text, `User ${chatId}`, messageId);
       return res.send('ok');
     }
     
@@ -430,6 +561,7 @@ async function startServer() {
             if (context.isOutbox) return;
             const text = context.text || '';
             const chatId = context.senderId.toString();
+            const messageId = context.id.toString();
             let username = `User ${chatId}`;
             try {
               const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
@@ -437,7 +569,7 @@ async function startServer() {
             } catch (e) { console.error('Error fetching VK user info:', e); }
             
             console.log(`Received VK message from ${username}: ${text}`);
-            await saveMessage('vk', chatId, text, username);
+            await saveMessage('vk', chatId, text, username, messageId);
           });
 
           try {
@@ -563,6 +695,7 @@ async function startServer() {
       const message = object.message;
       const chatId = message.peer_id.toString();
       const text = message.text || '';
+      const messageId = message.id.toString();
       
       let username = `User ${chatId}`;
       
@@ -579,7 +712,7 @@ async function startServer() {
       }
       
       console.log(`Received VK message from ${username} (${chatId}): ${text}`);
-      await saveMessage('vk', chatId, text, username);
+      await saveMessage('vk', chatId, text, username, messageId);
       res.send('ok');
     } else {
       res.send('ok');
