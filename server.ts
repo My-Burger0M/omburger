@@ -1,6 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { createServer as createViteServer } from 'vite';
+// import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth } from './server-firebase';
 import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
@@ -58,6 +59,7 @@ async function startServer() {
       lastVkError = null;
       lastTgError = null;
 
+      // 1. Try to load from Database
       for (const userDoc of snapshot.docs) {
         const tokens = userDoc.data().tokens || {};
         
@@ -72,8 +74,8 @@ async function startServer() {
           if (tokens.vk && !vk) {
             console.log('Found VK token for user', userDoc.id);
             vk = new VK({ token: tokens.vk });
-            
-            // Try to identify if it's a group token
+            // ... (rest of VK init logic from DB) ...
+             // Try to identify if it's a group token
             vk.api.groups.getById({}).then(groups => {
               console.log('VK Bot identified as Group:', groups[0].name);
             }).catch(e => {
@@ -119,6 +121,7 @@ async function startServer() {
 
           // Initialize Telegram if token exists
           if (tokens.tg && !tgBot) {
+             // ... (rest of TG init logic from DB) ...
             console.log('Found TG token for user', userDoc.id);
             tgBot = new Telegraf(tokens.tg);
 
@@ -153,14 +156,77 @@ async function startServer() {
             process.once('SIGTERM', () => tgBot?.stop('SIGTERM'));
           }
           
-          // If we found all tokens, we can stop (assuming single user usage mostly)
           if (vk && tgBot && wbTokenFound && ozonTokenFound && maxTokenFound) break;
         }
       }
+
+      // 2. Fallback to Environment Variables if not found in DB
+      if (!vk && process.env.VK_TOKEN) {
+        console.log('Initializing VK from Environment Variable');
+        try {
+          vk = new VK({ token: process.env.VK_TOKEN });
+          
+          vk.updates.on('message_new', async (context) => {
+            if (context.isOutbox) return;
+            const text = context.text || '';
+            const chatId = context.senderId.toString();
+            let username = `User ${chatId}`;
+            try {
+              const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
+              if (user) username = `${user.first_name} ${user.last_name}`;
+            } catch (e) { console.error('Error fetching VK user info:', e); }
+            
+            console.log(`Received VK message from ${username}: ${text}`);
+            await saveMessage('vk', chatId, text, username);
+          });
+
+          if (!process.env.VERCEL) {
+            vk.updates.start().then(() => {
+              console.log('VK Long Polling started (Env Var)');
+              vkPollingStarted = true;
+            }).catch(e => {
+              console.error('VK Start Error (Env Var):', e);
+              lastVkError = e.message;
+            });
+          } else {
+             console.log('VK initialized for Webhooks (Env Var, Vercel mode)');
+             vkPollingStarted = true;
+          }
+        } catch (e: any) {
+          console.error('Error initializing VK from Env:', e);
+          lastVkError = e.message;
+        }
+      }
+
+      if (!tgBot && process.env.TG_TOKEN) {
+        console.log('Initializing TG from Environment Variable');
+        try {
+          tgBot = new Telegraf(process.env.TG_TOKEN);
+          tgBot.on('text', async (ctx) => {
+            const text = ctx.message.text;
+            const chatId = ctx.chat.id.toString();
+            const user = ctx.from;
+            const username = user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`.trim();
+            console.log(`Received TG message from ${username}: ${text}`);
+            await saveMessage('tg', chatId, text, username);
+          });
+
+          if (!process.env.VERCEL) {
+            tgBot.launch().then(() => console.log('TG Bot started (Env Var)')).catch(e => {
+              console.error('TG Start Error (Env Var):', e);
+              lastTgError = e.message;
+            });
+          } else {
+            console.log('TG initialized for Webhooks (Env Var, Vercel mode)');
+          }
+        } catch (e: any) {
+          console.error('Error initializing TG from Env:', e);
+          lastTgError = e.message;
+        }
+      }
       
-      if (!vk) console.log('No VK token found on startup');
-      if (!tgBot) console.log('No TG token found on startup');
-      if (!wbTokenFound) console.log('No WB token found on startup');
+      if (!vk) console.log('No VK token found (DB or Env)');
+      if (!tgBot) console.log('No TG token found (DB or Env)');
 
     } catch (error) {
       console.error('Error initializing bots:', error);
@@ -466,13 +532,15 @@ async function startServer() {
 
     if (type === 'confirmation') {
       // Verify secret if provided
-      if (secret !== 'myom_secret_key_2026') {
+      const secretKey = process.env.VK_SECRET_KEY || 'myom_secret_key_2026';
+      if (secret !== secretKey) {
         console.warn('Invalid secret key for VK confirmation');
         return res.status(403).send('Forbidden');
       }
-      console.log('Returning confirmation string: 6457f321');
+      const confirmationCode = process.env.VK_CONFIRMATION_CODE || '6457f321';
+      console.log(`Returning confirmation string: ${confirmationCode}`);
       res.setHeader('Content-Type', 'text/plain');
-      return res.send('6457f321');
+      return res.send(confirmationCode);
     }
 
     if (type === 'message_new') {
@@ -514,11 +582,17 @@ async function startServer() {
 
   // --- Vite Middleware for Development ---
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('Vite middleware initialized');
+    } catch (e) {
+      console.error('Failed to load Vite:', e);
+    }
   } else if (process.env.NODE_ENV === 'production') {
     // In production, serve static files from dist
     app.use(express.static('dist'));
