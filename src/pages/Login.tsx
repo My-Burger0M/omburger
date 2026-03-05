@@ -18,7 +18,8 @@ export default function Login() {
       await signInWithEmailAndPassword(auth, email, password);
       navigate('/');
     } catch (err: any) {
-      setError('Ошибка входа. Проверьте email и пароль.');
+      console.error('Login error:', err);
+      setError(`Ошибка входа: ${err.message || 'Проверьте email и пароль'}`);
     } finally {
       setLoading(false);
     }
