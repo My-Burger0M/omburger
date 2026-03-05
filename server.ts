@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth } from './server-firebase';
-import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, where } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
@@ -150,6 +150,60 @@ async function startServer() {
 
             console.log('Found TG token for user', userDoc.id);
             tgBot = new Telegraf(tokens.tg);
+
+            tgBot.start(async (ctx) => {
+              const chatId = ctx.chat.id.toString();
+              const payload = ctx.payload; // This is the 'source_google' in /start source_google
+              
+              if (payload) {
+                console.log(`Deep link payload received: ${payload}`);
+                await addTag('tg', chatId, payload);
+                await logAction('tg', chatId, 'deep_link', { source: payload });
+              }
+              
+              const user = ctx.from;
+              const firstName = user.first_name || '';
+              const lastName = user.last_name || '';
+              const tgUsername = user.username ? `@${user.username}` : '';
+              const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
+              
+              await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
+            });
+
+            tgBot.command('stats', async (ctx) => {
+              // Basic stats command for admin
+              const chatId = ctx.chat.id.toString();
+              // Check if user is admin (you might want to check against a list of admin IDs)
+              // For now, let's just return stats
+              try {
+                const chatsRef = collection(db, 'chats');
+                const snapshot = await getDocs(chatsRef);
+                const tagCounts: Record<string, number> = {};
+                
+                snapshot.forEach(doc => {
+                  const data = doc.data();
+                  if (data.tags && Array.isArray(data.tags)) {
+                    data.tags.forEach(tag => {
+                      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    });
+                  }
+                });
+                
+                let statsMsg = '📊 Статистика по тегам:\n\n';
+                if (Object.keys(tagCounts).length === 0) {
+                  statsMsg += 'Нет тегов.';
+                } else {
+                  for (const [tag, count] of Object.entries(tagCounts)) {
+                    statsMsg += `- ${tag}: ${count} чел.\n`;
+                  }
+                }
+                
+                await ctx.reply(statsMsg);
+              } catch (e) {
+                console.error('Error getting stats:', e);
+                await ctx.reply('Ошибка получения статистики.');
+              }
+            });
 
             tgBot.on(['text', 'photo', 'video', 'sticker'], async (ctx) => {
               const message = ctx.message;
@@ -299,13 +353,74 @@ async function startServer() {
         console.log('Initializing TG from Environment Variable');
         try {
           tgBot = new Telegraf(process.env.TG_TOKEN);
-          tgBot.on('text', async (ctx) => {
-            const text = ctx.message.text;
+          
+          tgBot.start(async (ctx) => {
+            const chatId = ctx.chat.id.toString();
+            const payload = ctx.payload;
+            if (payload) {
+              await addTag('tg', chatId, payload);
+              await logAction('tg', chatId, 'deep_link', { source: payload });
+            }
+            const user = ctx.from;
+            const username = user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`.trim();
+            await saveMessage('tg', chatId, '/start', username, ctx.message.message_id.toString());
+          });
+
+          tgBot.command('stats', async (ctx) => {
+            try {
+              const snapshot = await getDocs(collection(db, 'chats'));
+              const tagCounts: Record<string, number> = {};
+              snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.tags && Array.isArray(data.tags)) {
+                  data.tags.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; });
+                }
+              });
+              let statsMsg = '📊 Статистика по тегам:\n\n';
+              for (const [tag, count] of Object.entries(tagCounts)) { statsMsg += `- ${tag}: ${count} чел.\n`; }
+              await ctx.reply(statsMsg || 'Нет тегов.');
+            } catch (e) { await ctx.reply('Ошибка'); }
+          });
+
+          tgBot.on(['text', 'photo', 'video', 'sticker'], async (ctx) => {
+            const message = ctx.message;
             const chatId = ctx.chat.id.toString();
             const user = ctx.from;
             const username = user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`.trim();
+            
+            let text = '';
+            let mediaUrl = '';
+            let mediaType = '';
+
+            if ('text' in message) text = message.text;
+            else if ('caption' in message) text = message.caption || '';
+
+            if ('photo' in message) {
+              const photo = message.photo[message.photo.length - 1];
+              try {
+                const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+                mediaUrl = fileLink.href;
+                mediaType = 'photo';
+                if (!text) text = '[Фото]';
+              } catch (e) {}
+            } else if ('video' in message) {
+              try {
+                const fileLink = await ctx.telegram.getFileLink(message.video.file_id);
+                mediaUrl = fileLink.href;
+                mediaType = 'video';
+                if (!text) text = '[Видео]';
+              } catch (e) {}
+            } else if ('sticker' in message) {
+              try {
+                const fileLink = await ctx.telegram.getFileLink(message.sticker.file_id);
+                mediaUrl = fileLink.href;
+                mediaType = 'photo';
+                text = message.sticker.emoji || '[Стикер]';
+              } catch (e) {}
+            }
+
             console.log(`Received TG message from ${username}: ${text}`);
-            await saveMessage('tg', chatId, text, username);
+            await saveMessage('tg', chatId, text, username, undefined, undefined, undefined, mediaUrl, mediaType);
           });
 
           if (!process.env.VERCEL) {
@@ -347,6 +462,42 @@ async function startServer() {
       console.log(`Stats updated for ${platform}`);
     } catch (error) {
       console.error('Error updating stats:', error);
+    }
+  };
+
+  // Helper to add tag
+  const addTag = async (platform: string, chatId: string, tag: string) => {
+    try {
+      const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
+      await setDoc(chatRef, { tags: arrayUnion(tag) }, { merge: true });
+      console.log(`Added tag ${tag} to ${platform}_${chatId}`);
+    } catch (e) {
+      console.error('Error adding tag:', e);
+    }
+  };
+
+  // Helper to remove tag
+  const removeTag = async (platform: string, chatId: string, tag: string) => {
+    try {
+      const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
+      await setDoc(chatRef, { tags: arrayRemove(tag) }, { merge: true });
+      console.log(`Removed tag ${tag} from ${platform}_${chatId}`);
+    } catch (e) {
+      console.error('Error removing tag:', e);
+    }
+  };
+
+  // Helper to log action
+  const logAction = async (platform: string, chatId: string, action: string, details: any = {}) => {
+    try {
+      const logRef = collection(db, 'chats', `${platform}_${chatId}`, 'logs');
+      await addDoc(logRef, {
+        action,
+        ...details,
+        timestamp: serverTimestamp()
+      });
+    } catch (e) {
+      console.error('Error logging action:', e);
     }
   };
 
@@ -535,6 +686,58 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
       res.status(500).json({ error: 'Failed to send message' });
+    }
+  });
+
+  // API to broadcast by tag
+  app.post('/api/broadcast/tag', async (req, res) => {
+    const { tag, text, userId, mediaUrl, mediaType, keyboard } = req.body;
+    
+    if (!tag || !userId) {
+      return res.status(400).json({ error: 'Missing tag or userId' });
+    }
+
+    try {
+      const chatsRef = collection(db, 'chats');
+      const q = query(chatsRef, where('tags', 'array-contains', tag));
+      const snapshot = await getDocs(q);
+      
+      let sentCount = 0;
+      
+      for (const docSnap of snapshot.docs) {
+        const chatData = docSnap.data();
+        const { chatId, platform } = chatData;
+        
+        if (chatId && platform) {
+          try {
+            await sendMessageInternal({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard });
+            
+            // Log to chat history
+            await addDoc(collection(db, 'chats', docSnap.id, 'messages'), {
+              text: text || '',
+              sender: 'admin',
+              timestamp: serverTimestamp(),
+              mediaUrl: mediaUrl || null,
+              mediaType: mediaType || null,
+              keyboard: keyboard || null
+            });
+
+            await updateDoc(docSnap.ref, {
+              lastMessage: mediaUrl ? `[${mediaType === 'photo' ? 'Фото' : 'Видео'}] ${text}` : text,
+              lastMessageAt: serverTimestamp()
+            });
+            
+            sentCount++;
+          } catch (e) {
+            console.error(`Failed to broadcast to ${platform}_${chatId}:`, e);
+          }
+        }
+      }
+      
+      res.json({ success: true, sentCount });
+    } catch (error: any) {
+      console.error('Error broadcasting by tag:', error);
+      res.status(500).json({ error: 'Failed to broadcast' });
     }
   });
 
