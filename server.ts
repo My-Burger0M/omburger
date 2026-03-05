@@ -151,10 +151,10 @@ async function startServer() {
             console.log('Found TG token for user', userDoc.id);
             tgBot = new Telegraf(tokens.tg);
 
-            tgBot.on('text', async (ctx) => {
-              const text = ctx.message.text;
+            tgBot.on(['text', 'photo', 'video', 'sticker'], async (ctx) => {
+              const message = ctx.message;
               const chatId = ctx.chat.id.toString();
-              const messageId = ctx.message.message_id.toString();
+              const messageId = message.message_id.toString();
               const user = ctx.from;
               
               const firstName = user.first_name || '';
@@ -164,6 +164,50 @@ async function startServer() {
               // Prefer "Bacardi Lemon" (First Last) over @username if available
               const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
               const username = displayName; // Use displayName as main identifier for UI
+
+              let text = '';
+              let mediaUrl = '';
+              let mediaType = '';
+
+              if ('text' in message) {
+                text = message.text;
+              } else if ('caption' in message) {
+                text = message.caption || '';
+              }
+
+              if ('photo' in message) {
+                // Get the largest photo
+                const photo = message.photo[message.photo.length - 1];
+                try {
+                  const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+                  mediaUrl = fileLink.href;
+                  mediaType = 'photo';
+                  if (!text) text = '[Фото]';
+                } catch (e) {
+                  console.error('Error fetching photo link:', e);
+                }
+              } else if ('video' in message) {
+                try {
+                  const fileLink = await ctx.telegram.getFileLink(message.video.file_id);
+                  mediaUrl = fileLink.href;
+                  mediaType = 'video';
+                  if (!text) text = '[Видео]';
+                } catch (e) {
+                  console.error('Error fetching video link:', e);
+                }
+              } else if ('sticker' in message) {
+                try {
+                  // Stickers are tricky, they are usually .webp. 
+                  // We can try to get the file link, but browsers might not display .webp easily in img tags without conversion?
+                  // Modern browsers support webp.
+                  const fileLink = await ctx.telegram.getFileLink(message.sticker.file_id);
+                  mediaUrl = fileLink.href;
+                  mediaType = 'photo'; // Treat as photo for simplicity
+                  text = message.sticker.emoji || '[Стикер]';
+                } catch (e) {
+                  console.error('Error fetching sticker link:', e);
+                }
+              }
 
               // Try to get avatar (profile photos)
               let avatar = '';
@@ -179,7 +223,7 @@ async function startServer() {
               }
 
               console.log(`Received TG message from ${username}: ${text}`);
-              await saveMessage('tg', chatId, text, username, messageId, avatar, displayName);
+              await saveMessage('tg', chatId, text, username, messageId, avatar, displayName, mediaUrl, mediaType);
             });
 
             if (!process.env.VERCEL) {
@@ -307,24 +351,13 @@ async function startServer() {
   };
 
   // Helper to save message
-  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string, messageId?: string, avatar?: string, displayName?: string) => {
+  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string, messageId?: string, avatar?: string, displayName?: string, mediaUrl?: string, mediaType?: string) => {
     try {
       const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
       
       // Check for duplicates if messageId is provided
       if (messageId) {
-        // We can check if a message with this external ID already exists in the subcollection
-        // However, querying subcollection for every message might be costly.
-        // A simpler way for deduplication within a short timeframe is checking recent messages or using the messageId as doc ID.
-        // Let's use messageId as doc ID if possible, or query.
-        // Since we want to preserve ordering, using timestamp-based ID is better, but we can store externalId field.
-        
-        const messagesRef = collection(db, 'chats', `${platform}_${chatId}`, 'messages');
-        const q = query(messagesRef); 
-        // Note: Firestore doesn't support "exists" check easily without reading.
-        // To strictly prevent duplicates, we should use the external messageId as the document ID.
-        // But messageId from VK/TG might not be unique globally (only unique per chat).
-        // So we can use `${platform}_${chatId}_${messageId}` as the doc ID for the message.
+        // ... (existing comments)
       }
 
       const msgDocId = messageId ? `${platform}_${chatId}_${messageId}` : undefined;
@@ -346,7 +379,7 @@ async function startServer() {
         platform,
         chatId,
         username, // This is now the "Display Name" effectively
-        lastMessage: text,
+        lastMessage: mediaUrl ? `[${mediaType === 'photo' ? 'Фото' : 'Видео'}] ${text}` : text,
         lastMessageAt: serverTimestamp(),
         unreadCount: increment(1),
         messageCount: increment(1)
@@ -358,12 +391,16 @@ async function startServer() {
       await setDoc(chatRef, chatUpdateData, { merge: true });
 
       // Add message to subcollection
-      await setDoc(msgRef, {
+      const messageData: any = {
         text,
         sender: 'user',
-        timestamp: serverTimestamp(),
-        externalId: messageId
-      });
+        timestamp: serverTimestamp()
+      };
+      if (messageId) messageData.externalId = messageId;
+      if (mediaUrl) messageData.mediaUrl = mediaUrl;
+      if (mediaType) messageData.mediaType = mediaType;
+
+      await setDoc(msgRef, messageData);
 
       await updateStats(platform, chatId);
       console.log(`Message saved from ${platform} user ${username}`);

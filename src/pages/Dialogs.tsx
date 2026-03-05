@@ -17,7 +17,7 @@ import { DateTime } from 'luxon';
 // Sound for new messages
 const playNotificationSound = () => {
   try {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    const audio = new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3');
     audio.volume = 0.5;
     audio.play().catch(e => console.error('Error playing sound:', e));
   } catch (e) {
@@ -242,12 +242,28 @@ export default function Dialogs() {
   const handleSaveNote = async () => {
     if (!currentUser || !editingNote?.title) return;
     try {
+      const sanitizeData = (data: any): any => {
+        if (data === undefined) return null;
+        if (data === null) return null;
+        if (Array.isArray(data)) return data.map(sanitizeData);
+        if (typeof data === 'object') {
+          const result: any = {};
+          for (const key in data) {
+            result[key] = sanitizeData(data[key]);
+          }
+          return result;
+        }
+        return data;
+      };
+
+      const sanitizedKeyboard = sanitizeData(editingNote.keyboard || []);
+
       const noteData = {
         title: editingNote.title,
         text: editingNote.text || '',
         mediaUrl: editingNote.mediaUrl || '',
         mediaType: editingNote.mediaType || 'photo',
-        keyboard: editingNote.keyboard || []
+        keyboard: sanitizedKeyboard
       };
 
       if (editingNote.id === 'new') {
@@ -367,6 +383,24 @@ export default function Dialogs() {
               const chat = chats.find(c => c.id === recipientId);
               if (!chat) continue;
 
+              const currentKeyboard = note.keyboard && note.keyboard.length > 0 ? { inline_keyboard: note.keyboard } : null;
+              
+              const sanitizeData = (data: any): any => {
+                if (data === undefined) return null;
+                if (data === null) return null;
+                if (Array.isArray(data)) return data.map(sanitizeData);
+                if (typeof data === 'object') {
+                  const result: any = {};
+                  for (const key in data) {
+                    result[key] = sanitizeData(data[key]);
+                  }
+                  return result;
+                }
+                return data;
+              };
+
+              const sanitizedKeyboard = sanitizeData(currentKeyboard);
+
               const API_URL = import.meta.env.VITE_API_URL || '';
               await axios.post(`${API_URL}/api/messages/send`, {
                 chatId: chat.chatId,
@@ -375,7 +409,7 @@ export default function Dialogs() {
                 userId: currentUser?.uid,
                 mediaUrl: note.mediaUrl,
                 mediaType: note.mediaType,
-                keyboard: note.keyboard ? { inline_keyboard: note.keyboard } : undefined
+                keyboard: sanitizedKeyboard
               });
 
               // Log to chat history
@@ -383,15 +417,15 @@ export default function Dialogs() {
                 text: note.text,
                 sender: 'admin',
                 timestamp: serverTimestamp(),
-                mediaUrl: note.mediaUrl,
-                mediaType: note.mediaType,
-                keyboard: note.keyboard ? { inline_keyboard: note.keyboard } : undefined
+                mediaUrl: note.mediaUrl || null,
+                mediaType: note.mediaType || null,
+                keyboard: sanitizedKeyboard
               });
 
-              await updateDoc(doc(db, 'chats', recipientId), {
+              await setDoc(doc(db, 'chats', recipientId), {
                 lastMessage: note.mediaUrl ? `[${note.mediaType === 'photo' ? 'Фото' : 'Видео'}] ${note.text}` : note.text,
                 lastMessageAt: serverTimestamp()
-              });
+              }, { merge: true });
           }
           alert('Отправлено!');
           if (isGlobalNotes) {
@@ -486,7 +520,24 @@ export default function Dialogs() {
     const messageText = newMessage;
     const currentMediaUrl = mediaUrl;
     const currentMediaType = mediaType;
-    const currentKeyboard = keyboardRows.length > 0 ? { inline_keyboard: keyboardRows } : undefined;
+    const currentKeyboard = keyboardRows.length > 0 ? { inline_keyboard: keyboardRows } : null;
+
+    // Helper to recursively replace undefined with null
+    const sanitizeData = (data: any): any => {
+      if (data === undefined) return null;
+      if (data === null) return null;
+      if (Array.isArray(data)) return data.map(sanitizeData);
+      if (typeof data === 'object') {
+        const result: any = {};
+        for (const key in data) {
+          result[key] = sanitizeData(data[key]);
+        }
+        return result;
+      }
+      return data;
+    };
+
+    const sanitizedKeyboard = sanitizeData(currentKeyboard);
 
     setNewMessage('');
     setMediaUrl('');
@@ -503,22 +554,22 @@ export default function Dialogs() {
         userId: currentUser?.uid,
         mediaUrl: currentMediaUrl,
         mediaType: currentMediaType,
-        keyboard: currentKeyboard
+        keyboard: sanitizedKeyboard
       });
 
       await addDoc(collection(db, 'chats', selectedChatId, 'messages'), {
         text: messageText,
         sender: 'admin',
         timestamp: serverTimestamp(),
-        mediaUrl: currentMediaUrl,
-        mediaType: currentMediaType,
-        keyboard: currentKeyboard
+        mediaUrl: currentMediaUrl || null,
+        mediaType: currentMediaType || null,
+        keyboard: sanitizedKeyboard
       });
 
-      await updateDoc(doc(db, 'chats', selectedChatId), {
+      await setDoc(doc(db, 'chats', selectedChatId), {
         lastMessage: currentMediaUrl ? `[${currentMediaType === 'photo' ? 'Фото' : 'Видео'}] ${messageText}` : messageText,
         lastMessageAt: serverTimestamp()
-      });
+      }, { merge: true });
     } catch (error) {
       console.error('Error sending message:', error);
       alert('Ошибка отправки. Проверьте консоль.');
