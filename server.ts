@@ -70,20 +70,20 @@ async function startServer() {
           if (tokens.ozon) ozonTokenFound = true;
           if (tokens.max) maxTokenFound = true;
 
-          // Initialize VK if token exists
-          if (tokens.vk && !vk) {
-            console.log('Found VK token for user', userDoc.id);
-            vk = new VK({ token: tokens.vk });
-            // ... (rest of VK init logic from DB) ...
-             // Try to identify if it's a group token
-            vk.api.groups.getById({}).then(groups => {
-              console.log('VK Bot identified as Group:', groups[0].name);
-            }).catch(e => {
-              console.log('VK Bot might be using a User Token or invalid Group Token');
-            });
-            
-            // Re-attach listeners
-             vk.updates.on('message_new', async (context) => {
+            // Initialize VK if token exists
+            if (tokens.vk && !vk) {
+              console.log('Found VK token for user', userDoc.id);
+              vk = new VK({ token: tokens.vk });
+              
+              // Try to identify if it's a group token
+              vk.api.groups.getById({}).then(groups => {
+                console.log('VK Bot identified as Group:', groups[0].name);
+              }).catch(e => {
+                console.log('VK Bot might be using a User Token or invalid Group Token');
+              });
+              
+              // Re-attach listeners
+               vk.updates.on('message_new', async (context) => {
                 if (context.isOutbox) return;
                 const text = context.text || '';
                 const chatId = context.senderId.toString();
@@ -166,6 +166,9 @@ async function startServer() {
         try {
           vk = new VK({ token: process.env.VK_TOKEN });
           
+          // Optional group check
+          vk.api.groups.getById({}).catch(() => {});
+
           vk.updates.on('message_new', async (context) => {
             if (context.isOutbox) return;
             const text = context.text || '';
@@ -309,16 +312,26 @@ async function startServer() {
         if (!tokens?.vk) {
           return res.status(400).json({ error: 'VK token not configured' });
         }
-        // VK API call would go here
-        await axios.post('https://api.vk.com/method/messages.send', null, {
-          params: {
-            peer_id: chatId,
-            message: text,
-            random_id: Math.floor(Math.random() * 1000000),
-            access_token: tokens.vk,
-            v: '5.131'
-          }
-        });
+        
+        // Use vk-io instance if available, otherwise use axios
+        if (vk) {
+             await vk.api.messages.send({
+                peer_id: Number(chatId),
+                message: text,
+                random_id: Math.floor(Math.random() * 1000000)
+             });
+        } else {
+            // Fallback to axios if vk instance is not ready (though it should be)
+            await axios.post('https://api.vk.com/method/messages.send', null, {
+            params: {
+                peer_id: chatId,
+                message: text,
+                random_id: Math.floor(Math.random() * 1000000),
+                access_token: tokens.vk,
+                v: '5.131'
+            }
+            });
+        }
       } else if (platform === 'max') {
         // MAX sending logic...
         console.log('MAX sending not implemented yet');
@@ -409,6 +422,9 @@ async function startServer() {
 
           vk = new VK({ token: tokens.vk });
           
+          // Optional group check
+          vk.api.groups.getById({}).catch(() => {});
+
           // Re-attach listeners
           vk.updates.on('message_new', async (context) => {
             if (context.isOutbox) return;
@@ -537,7 +553,7 @@ async function startServer() {
         console.warn('Invalid secret key for VK confirmation');
         return res.status(403).send('Forbidden');
       }
-      const confirmationCode = process.env.VK_CONFIRMATION_CODE || '6457f321';
+      const confirmationCode = process.env.VK_CONFIRMATION_CODE || '36a42e9f';
       console.log(`Returning confirmation string: ${confirmationCode}`);
       res.setHeader('Content-Type', 'text/plain');
       return res.send(confirmationCode);
