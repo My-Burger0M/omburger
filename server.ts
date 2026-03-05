@@ -158,24 +158,26 @@ async function startServer() {
             });
 
             if (!process.env.VERCEL) {
-              tgBot.launch().then(() => {
-                console.log('Telegram Bot started successfully');
-                lastTgError = null;
-              }).catch((err) => {
-                console.error('Failed to start Telegram Bot:', err);
-                if (String(err).includes('404') || String(err).includes('Not Found')) {
-                  lastTgError = "Ошибка запуска (404). Неверный токен бота. Проверьте токен в @BotFather.";
-                } else {
-                  lastTgError = err.message || String(err);
-                }
-              });
+              // Add delay to allow previous instance to die
+              setTimeout(() => {
+                  if (!tgBot) return;
+                  tgBot.launch().then(() => {
+                    console.log('Telegram Bot started successfully');
+                    lastTgError = null;
+                  }).catch((err) => {
+                    console.error('Failed to start Telegram Bot:', err);
+                    if (String(err).includes('409') || String(err).includes('Conflict')) {
+                        lastTgError = "Конфликт (409). Запущен другой экземпляр бота. Попробуйте перезагрузить сервер.";
+                    } else if (String(err).includes('404') || String(err).includes('Not Found')) {
+                      lastTgError = "Ошибка запуска (404). Неверный токен бота. Проверьте токен в @BotFather.";
+                    } else {
+                      lastTgError = err.message || String(err);
+                    }
+                  });
+              }, 2000); // 2 second delay
             } else {
               console.log('Telegram initialized for Webhooks (Vercel mode)');
             }
-
-            // Enable graceful stop
-            process.once('SIGINT', () => tgBot?.stop('SIGINT'));
-            process.once('SIGTERM', () => tgBot?.stop('SIGTERM'));
           }
           
           if (vk && tgBot && wbTokenFound && ozonTokenFound && maxTokenFound) break;
