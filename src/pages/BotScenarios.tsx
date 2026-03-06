@@ -120,14 +120,14 @@ const ConditionNode = ({ data }: { data: any }) => (
 );
 
 const TriggerNode = ({ data }: { data: any }) => (
-  <div className="bg-[#1a1a1a] border border-purple-500/50 rounded-xl w-56 shadow-lg shadow-purple-900/20">
+  <div className="bg-[#1a1a1a] border border-purple-500/50 rounded-xl w-64 shadow-lg shadow-purple-900/20">
     <div className="bg-purple-500/10 p-2 rounded-t-xl border-b border-purple-500/20 flex items-center gap-2">
       <LinkIcon size={14} className="text-purple-400" />
-      <span className="text-xs font-bold text-purple-100">{data.label || 'Точка входа (Ссылка)'}</span>
+      <span className="text-xs font-bold text-purple-100">{data.label || 'Вход по ссылке'}</span>
     </div>
     <div className="p-3 text-xs text-gray-400 flex flex-col gap-1">
-      <div className="truncate text-purple-300 font-mono text-[10px] bg-purple-500/10 p-1 rounded">
-        {data.platform === 'vk' ? `?ref=${data.refCode || 'ref'}` : `?start=${data.refCode || 'ref'}`}
+      <div className="truncate text-purple-300 font-mono text-[9px] bg-purple-500/10 p-1 rounded select-all" title="Скопируйте эту ссылку (замените bot_name/club_id на свои)">
+        {data.platform === 'vk' ? `https://vk.me/club_id?ref=${data.refCode || 'ref'}` : `https://t.me/bot_name?start=${data.refCode || 'ref'}`}
       </div>
       <div className="truncate mt-1">
         <span className="text-gray-500">Тег:</span> <span className="text-white">{data.tag || 'нет'}</span>
@@ -179,7 +179,13 @@ export default function BotScenarios() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setNodes(data.nodes || initialNodes);
+          const loadedNodes = data.nodes || initialNodes;
+          // Ensure platform is set for trigger nodes
+          const updatedNodes = loadedNodes.map((n: any) => ({
+            ...n,
+            data: { ...n.data, platform: selectedPlatform }
+          }));
+          setNodes(updatedNodes);
           setEdges(data.edges || initialEdges);
           setBotActive(data.isActive || false);
         } else {
@@ -744,6 +750,33 @@ export default function BotScenarios() {
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">Если тег есть — идет по зеленой ветке, если нет — по красной.</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.data.type === 'trigger' && (
+                <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Уникальный код ссылки (ref)</label>
+                    <input 
+                      type="text" 
+                      value={selectedNode.data.refCode as string || ''}
+                      onChange={(e) => updateNodeData('refCode', e.target.value)}
+                      placeholder="Например: funnel_1"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">Будет добавлено в конец ссылки (например: ?start=funnel_1)</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Присвоить тег при переходе</label>
+                    <input 
+                      type="text" 
+                      value={selectedNode.data.tag as string || ''}
+                      onChange={(e) => updateNodeData('tag', e.target.value)}
+                      placeholder="Например: from_ad"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">Этот тег автоматически добавится пользователю.</p>
                   </div>
                 </div>
               )}

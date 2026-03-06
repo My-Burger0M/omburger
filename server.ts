@@ -116,6 +116,26 @@ async function startServer() {
                 await processScenario('vk', chatId, text, payload, userDoc.id);
               });
 
+              vk.updates.on('message_event', async (context) => {
+                const chatId = context.peerId.toString();
+                let username = `User ${chatId}`;
+                try {
+                  const [user] = await vk!.api.users.get({ user_ids: [context.userId] });
+                  if (user) username = `${user.first_name} ${user.last_name}`;
+                } catch (e) {}
+                
+                const payload = context.eventPayload as any;
+                const text = payload?.cmd || payload?.command || JSON.stringify(payload) || 'Button clicked';
+                
+                console.log(`Received VK message_event from ${username}: ${text}`);
+                await saveMessage('vk', chatId, `[Кнопка] ${text}`, username);
+                await processScenario('vk', chatId, text, null, userDoc.id);
+                
+                try {
+                  await context.answer({ type: 'show_snackbar', text: '✅' });
+                } catch (e) {}
+              });
+
               if (!process.env.VERCEL) {
                 vk.updates.start().then(() => {
                   console.log('VK Long Polling started successfully on startup');
@@ -283,6 +303,33 @@ async function startServer() {
               console.log(`Received TG message from ${username}: ${text}`);
               await saveMessage('tg', chatId, text, username, messageId, avatar, displayName, mediaUrl, mediaType);
               await processScenario('tg', chatId, text, null, userDoc.id);
+            });
+
+            tgBot.on('callback_query', async (ctx) => {
+              const query = ctx.callbackQuery;
+              const chatId = query.message?.chat.id.toString();
+              if (!chatId) return;
+              
+              const user = ctx.from;
+              const firstName = user.first_name || '';
+              const lastName = user.last_name || '';
+              const tgUsername = user.username ? `@${user.username}` : '';
+              const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
+              
+              let text = 'Button clicked';
+              if ('data' in query) {
+                text = query.data;
+              }
+
+              console.log(`Received TG callback_query from ${displayName}: ${text}`);
+              await saveMessage('tg', chatId, `[Кнопка] ${text}`, displayName);
+              await processScenario('tg', chatId, text, null, userDoc.id);
+              
+              try {
+                await ctx.answerCbQuery();
+              } catch (e) {
+                console.error('Error answering callback query:', e);
+              }
             });
 
             if (!process.env.VERCEL) {
@@ -560,6 +607,24 @@ async function startServer() {
         } catch (e) {
           console.error('Error sending scenario message:', e);
         }
+
+        if (node.data.timeout > 0) {
+          const timeoutMinutes = node.data.timeout;
+          const timeoutAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
+          
+          const timeoutEdge = edges.find(e => e.source === currentNodeId && e.sourceHandle === 'timeout');
+          const replyEdge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom'));
+
+          await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+            'scenarioState.active': true,
+            'scenarioState.nodeId': currentNodeId,
+            'scenarioState.replyNodeId': replyEdge ? replyEdge.target : null,
+            'scenarioState.timeoutNodeId': timeoutEdge ? timeoutEdge.target : null,
+            'scenarioState.timeoutAt': timeoutAt,
+            'scenarioState.userId': userId
+          });
+          break; // Stop execution, wait for user or cron
+        }
       } else if (node.type === 'action') {
         const actions = node.data.actions || [];
         for (const act of actions) {
@@ -592,6 +657,9 @@ async function startServer() {
 
   const processScenario = async (platform: string, chatId: string, text: string, payload: string | null, userId: string) => {
     try {
+      const chatDoc = await getDoc(doc(db, 'chats', `${platform}_${chatId}`));
+      const chatData = chatDoc.data() || {};
+
       const scenarioRef = doc(db, 'users', userId, 'settings', `scenario_${platform}`);
       const scenarioSnap = await getDoc(scenarioRef);
       if (!scenarioSnap.exists()) return;
@@ -601,6 +669,19 @@ async function startServer() {
 
       const nodes = scenario.nodes || [];
       const edges = scenario.edges || [];
+
+      // Check if waiting for message
+      if (chatData.scenarioState?.active && !payload && text !== '/start') {
+        const replyNodeId = chatData.scenarioState.replyNodeId;
+        // Clear state
+        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+          'scenarioState.active': false
+        });
+        if (replyNodeId) {
+          await runFlow(userId, platform, chatId, replyNodeId, nodes, edges);
+        }
+        return; // Done processing this message
+      }
 
       let startNodeId = null;
 
@@ -688,9 +769,9 @@ async function startServer() {
   // Internal Send Function
   const sendMessageInternal = async ({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard }: any) => {
       // Get tokens for the specific user
-      const tokensRef = doc(db, 'users', userId, 'settings', 'tokens');
-      const tokensSnap = await getDoc(tokensRef);
-      const tokens = tokensSnap.data();
+      const userDocRef = doc(db, 'users', userId);
+      const userDocSnap = await getDoc(userDocRef);
+      const tokens = userDocSnap.data()?.tokens || {};
 
       if (platform === 'tg') {
         if (!tokens?.tg) throw new Error('Telegram token not configured');
@@ -719,7 +800,20 @@ async function startServer() {
             random_id: Math.floor(Math.random() * 1000000)
         };
 
-        if (keyboard) params.keyboard = JSON.stringify(keyboard);
+        if (keyboard && keyboard.inline_keyboard) {
+          const vkButtons = keyboard.inline_keyboard.map((row: any[]) => 
+            row.map(btn => {
+              if (btn.url) {
+                return { action: { type: 'open_link', link: btn.url, label: btn.text } };
+              }
+              return { 
+                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd: btn.callback_data }) },
+                color: btn.color || 'secondary'
+              };
+            })
+          );
+          params.keyboard = JSON.stringify({ inline: true, buttons: vkButtons });
+        }
 
         if (vk) {
              await vk.api.messages.send(params);
@@ -735,6 +829,34 @@ async function startServer() {
   const checkScheduledMessages = async () => {
       try {
           const now = new Date();
+          
+          // Check for timed out scenario states
+          try {
+            const chatsRef = collection(db, 'chats');
+            const qState = query(chatsRef, where('scenarioState.active', '==', true));
+            const stateSnapshot = await getDocs(qState);
+            
+            for (const docSnap of stateSnapshot.docs) {
+              const state = docSnap.data().scenarioState;
+              if (state.timeoutAt && state.timeoutAt.toDate() <= now) {
+                // Timeout reached!
+                await updateDoc(docSnap.ref, { 'scenarioState.active': false });
+                if (state.timeoutNodeId && state.userId) {
+                  const platform = docSnap.data().platform;
+                  const chatId = docSnap.data().chatId;
+                  const scenarioRef = doc(db, 'users', state.userId, 'settings', `scenario_${platform}`);
+                  const scenarioSnap = await getDoc(scenarioRef);
+                  if (scenarioSnap.exists() && scenarioSnap.data().isActive) {
+                    const { nodes, edges } = scenarioSnap.data();
+                    await runFlow(state.userId, platform, chatId, state.timeoutNodeId, nodes, edges);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Error checking scenario timeouts:', e);
+          }
+
           // Query only by status to avoid composite index requirement
           const q = query(
               collection(db, 'scheduled_messages'), 
