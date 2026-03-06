@@ -36,6 +36,7 @@ interface Chat {
   lastMessage: string;
   lastMessageAt: any;
   unreadCount: number;
+  tags?: string[];
 }
 
 interface Message {
@@ -74,6 +75,7 @@ export default function Dialogs() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<'all' | 'tg' | 'vk' | 'max'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState<string>('');
   
   // Modals & UI States
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -582,8 +584,11 @@ export default function Dialogs() {
     const matchesFilter = filter === 'all' || chat.platform === filter;
     const name = chat.customName || chat.displayName || chat.username || '';
     const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
+    const matchesTag = tagFilter === '' || (chat.tags && chat.tags.includes(tagFilter));
+    return matchesFilter && matchesSearch && matchesTag;
   });
+
+  const allTags = Array.from(new Set(chats.flatMap(c => c.tags || []))).filter(Boolean);
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
 
@@ -619,6 +624,21 @@ export default function Dialogs() {
                 className="w-full bg-[#1a1a1a] rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all placeholder:text-gray-600 text-gray-200"
               />
             </div>
+            
+            {allTags.length > 0 && (
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="bg-[#1a1a1a] border border-white/5 rounded-xl px-2 py-2.5 text-sm text-gray-300 outline-none focus:ring-1 focus:ring-purple-500/50 max-w-[100px]"
+                title="Фильтр по тегам"
+              >
+                <option value="">Все теги</option>
+                {allTags.map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            )}
+
             <button 
               onClick={() => { setShowNotes(true); setIsGlobalNotes(true); }}
               className="p-2.5 bg-[#1a1a1a] rounded-xl text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all"
@@ -688,6 +708,15 @@ export default function Dialogs() {
                   <p className="text-xs text-gray-500 truncate mt-0.5 pr-6">
                     {chat.lastMessage || 'Нет сообщений'}
                   </p>
+                  {chat.tags && chat.tags.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {chat.tags.map(tag => (
+                        <span key={tag} className="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -728,6 +757,11 @@ export default function Dialogs() {
                 <div className="font-bold text-gray-100 text-sm flex items-center gap-2">
                   {selectedChat.customName || selectedChat.displayName || selectedChat.username}
                   {selectedChat.customName && <span className="text-[10px] text-gray-500 bg-white/5 px-1.5 rounded">Renamed</span>}
+                  {selectedChat.tags && selectedChat.tags.map(tag => (
+                    <span key={tag} className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
+                      #{tag}
+                    </span>
+                  ))}
                 </div>
                 <div className="text-xs text-green-500/80 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>

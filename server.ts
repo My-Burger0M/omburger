@@ -111,6 +111,9 @@ async function startServer() {
                 
                 console.log(`Received VK message from ${username}: ${text}`);
                 await saveMessage('vk', chatId, text, username, messageId);
+                
+                const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
+                await processScenario('vk', chatId, text, payload, userDoc.id);
               });
 
               if (!process.env.VERCEL) {
@@ -168,6 +171,7 @@ async function startServer() {
               const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
               
               await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
+              await processScenario('tg', chatId, '/start', payload, userDoc.id);
             });
 
             tgBot.command('stats', async (ctx) => {
@@ -278,6 +282,7 @@ async function startServer() {
 
               console.log(`Received TG message from ${username}: ${text}`);
               await saveMessage('tg', chatId, text, username, messageId, avatar, displayName, mediaUrl, mediaType);
+              await processScenario('tg', chatId, text, null, userDoc.id);
             });
 
             if (!process.env.VERCEL) {
@@ -364,6 +369,8 @@ async function startServer() {
             const user = ctx.from;
             const username = user.username ? `@${user.username}` : `${user.first_name} ${user.last_name || ''}`.trim();
             await saveMessage('tg', chatId, '/start', username, ctx.message.message_id.toString());
+            // Note: processScenario requires userId, which we don't have for Env Var fallback easily unless we hardcode.
+            // We will skip processScenario for Env Var fallback as it's meant for DB users.
           });
 
           tgBot.command('stats', async (ctx) => {
@@ -498,6 +505,124 @@ async function startServer() {
       });
     } catch (e) {
       console.error('Error logging action:', e);
+    }
+  };
+
+  // --- Scenario Engine ---
+  const runFlow = async (userId: string, platform: string, chatId: string, startNodeId: string, nodes: any[], edges: any[]) => {
+    let currentNodeId: string | null = startNodeId;
+    let visited = new Set<string>();
+
+    while (currentNodeId) {
+      if (visited.has(currentNodeId)) break; // Prevent infinite loops
+      visited.add(currentNodeId);
+
+      const node = nodes.find(n => n.id === currentNodeId);
+      if (!node) break;
+
+      if (node.type === 'message') {
+        const { text, mediaUrl, delay, keyboard } = node.data;
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay * 1000));
+        }
+        
+        let mediaType = undefined;
+        if (mediaUrl) {
+          mediaType = mediaUrl.match(/\.(mp4|mov)$/i) ? 'video' : 'photo';
+        }
+
+        // Send message
+        try {
+          await sendMessageInternal({
+            chatId,
+            platform,
+            text,
+            userId,
+            mediaUrl,
+            mediaType,
+            keyboard: keyboard && keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
+          });
+
+          // Log to chat history
+          await addDoc(collection(db, 'chats', `${platform}_${chatId}`, 'messages'), {
+            text: text || '',
+            sender: 'admin',
+            timestamp: serverTimestamp(),
+            mediaUrl: mediaUrl || null,
+            mediaType: mediaType || null,
+            keyboard: keyboard && keyboard.length > 0 ? { inline_keyboard: keyboard } : null
+          });
+
+          await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+            lastMessage: mediaUrl ? `[Медиа] ${text}` : text,
+            lastMessageAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.error('Error sending scenario message:', e);
+        }
+      } else if (node.type === 'action') {
+        const actions = node.data.actions || [];
+        for (const act of actions) {
+          if (act.type === 'add_tag' && act.tag) {
+            await addTag(platform, chatId, act.tag);
+          } else if (act.type === 'remove_tag' && act.tag) {
+            await removeTag(platform, chatId, act.tag);
+          }
+        }
+      } else if (node.type === 'condition') {
+        const tagToCheck = node.data.tag;
+        const chatDoc = await getDoc(doc(db, 'chats', `${platform}_${chatId}`));
+        const chatData = chatDoc.data() || {};
+        const hasTag = chatData.tags && chatData.tags.includes(tagToCheck);
+        
+        const edge = edges.find(e => e.source === currentNodeId && e.sourceHandle === (hasTag ? 'true' : 'false'));
+        currentNodeId = edge ? edge.target : null;
+        continue;
+      } else if (node.type === 'trigger') {
+        if (node.data.tag) {
+          await addTag(platform, chatId, node.data.tag);
+        }
+      }
+
+      // Find next node
+      const edge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom'));
+      currentNodeId = edge ? edge.target : null;
+    }
+  };
+
+  const processScenario = async (platform: string, chatId: string, text: string, payload: string | null, userId: string) => {
+    try {
+      const scenarioRef = doc(db, 'users', userId, 'settings', `scenario_${platform}`);
+      const scenarioSnap = await getDoc(scenarioRef);
+      if (!scenarioSnap.exists()) return;
+      
+      const scenario = scenarioSnap.data();
+      if (!scenario.isActive) return;
+
+      const nodes = scenario.nodes || [];
+      const edges = scenario.edges || [];
+
+      let startNodeId = null;
+
+      if (payload) {
+        const triggerNode = nodes.find((n: any) => n.type === 'trigger' && n.data.refCode === payload);
+        if (triggerNode) {
+          startNodeId = triggerNode.id;
+        }
+      }
+
+      if (!startNodeId && (text === '/start' || text.toLowerCase() === 'начать')) {
+        const startNode = nodes.find((n: any) => n.type === 'start');
+        if (startNode) {
+          startNodeId = startNode.id;
+        }
+      }
+
+      if (startNodeId) {
+        runFlow(userId, platform, chatId, startNodeId, nodes, edges).catch(e => console.error('Flow error:', e));
+      }
+    } catch (e) {
+      console.error('Error processing scenario:', e);
     }
   };
 
