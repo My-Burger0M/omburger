@@ -304,30 +304,6 @@ export default function Products() {
                   className="hidden"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Маркетплейс</label>
-                <select 
-                  value={newProduct.marketplace}
-                  onChange={(e) => setNewProduct({...newProduct, marketplace: e.target.value as any})}
-                  className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="wb">Wildberries</option>
-                  <option value="ozon">OZON</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">API Токен (для расчета продаж)</label>
-                <input 
-                  type="password" 
-                  value={newProduct.apiToken}
-                  onChange={(e) => setNewProduct({...newProduct, apiToken: e.target.value})}
-                  className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="Введите токен..."
-                />
-                <p className="text-xs text-gray-500 mt-1">Опционально. Используется для авто-расчета статистики.</p>
-              </div>
             </div>
 
             <button 

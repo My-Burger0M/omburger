@@ -137,12 +137,28 @@ const TriggerNode = ({ data }: { data: any }) => (
   </div>
 );
 
+const CommandNode = ({ data }: { data: any }) => (
+  <div className="bg-[#1a1a1a] border border-pink-500/50 rounded-xl w-56 shadow-lg shadow-pink-900/20">
+    <div className="bg-pink-500/10 p-2 rounded-t-xl border-b border-pink-500/20 flex items-center gap-2">
+      <MessageSquare size={14} className="text-pink-400" />
+      <span className="text-xs font-bold text-pink-100">{data.label || 'Команда'}</span>
+    </div>
+    <div className="p-3 text-xs text-gray-400 flex flex-col gap-1">
+      <div className="truncate text-pink-300 font-mono text-[12px] bg-pink-500/10 p-1 rounded text-center">
+        {data.command || '/command'}
+      </div>
+    </div>
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-pink-500" />
+  </div>
+);
+
 const nodeTypes = {
   start: StartNode,
   message: MessageNode,
   action: ActionNode,
   condition: ConditionNode,
   trigger: TriggerNode,
+  command: CommandNode,
 };
 
 const initialNodes: Node[] = [
@@ -270,12 +286,12 @@ export default function BotScenarios() {
     [setEdges],
   );
 
-  const addNode = (type: 'message' | 'action' | 'condition' | 'trigger') => {
+  const addNode = (type: 'message' | 'action' | 'condition' | 'trigger' | 'command') => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: type,
       data: { 
-        label: type === 'message' ? 'Сообщение' : type === 'action' ? 'Действия' : type === 'trigger' ? 'Вход по ссылке' : 'Условие',
+        label: type === 'message' ? 'Сообщение' : type === 'action' ? 'Действия' : type === 'trigger' ? 'Вход по ссылке' : type === 'command' ? 'Команда' : 'Условие',
         type,
         text: '',
         mediaUrl: '',
@@ -284,6 +300,7 @@ export default function BotScenarios() {
         actions: type === 'action' ? [{ type: 'add_tag', tag: '' }] : [],
         tag: '',
         refCode: type === 'trigger' ? `ref_${Math.floor(Math.random() * 10000)}` : '',
+        command: type === 'command' ? '/privet' : '',
         keyboard: [],
         platform: selectedPlatform
       },
@@ -406,6 +423,7 @@ export default function BotScenarios() {
               nodeColor={(n) => {
                 if (n.type === 'start') return '#9333ea';
                 if (n.type === 'trigger') return '#a855f7';
+                if (n.type === 'command') return '#ec4899';
                 if (n.type === 'message') return '#3b82f6';
                 if (n.type === 'action') return '#22c55e';
                 if (n.type === 'condition') return '#eab308';
@@ -417,6 +435,9 @@ export default function BotScenarios() {
             <Panel position="top-left" className="bg-[#1a1a1a] p-2 rounded-xl border border-white/10 flex gap-2">
               <button onClick={() => addNode('trigger')} className="p-2 hover:bg-[#333] rounded-lg text-purple-400 flex items-center gap-2 text-sm" title="Добавить точку входа (ссылку)">
                 <LinkIcon size={16} /> Вход
+              </button>
+              <button onClick={() => addNode('command')} className="p-2 hover:bg-[#333] rounded-lg text-pink-400 flex items-center gap-2 text-sm" title="Добавить команду (например /privet)">
+                <MessageSquare size={16} /> Команда
               </button>
               <div className="w-px h-6 bg-white/10 self-center mx-1"></div>
               <button onClick={() => addNode('message')} className="p-2 hover:bg-[#333] rounded-lg text-blue-400 flex items-center gap-2 text-sm" title="Добавить сообщение">
@@ -777,6 +798,22 @@ export default function BotScenarios() {
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">Этот тег автоматически добавится пользователю.</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.data.type === 'command' && (
+                <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Команда</label>
+                    <input 
+                      type="text" 
+                      value={selectedNode.data.command as string || ''}
+                      onChange={(e) => updateNodeData('command', e.target.value)}
+                      placeholder="Например: /privet"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-pink-500"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">Бот запустит эту ветку, если пользователь напишет эту команду.</p>
                   </div>
                 </div>
               )}

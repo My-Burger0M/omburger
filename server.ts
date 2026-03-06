@@ -692,6 +692,14 @@ async function startServer() {
         }
       }
 
+      if (!startNodeId) {
+        // Check for command node
+        const commandNode = nodes.find((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
+        if (commandNode) {
+          startNodeId = commandNode.id;
+        }
+      }
+
       if (!startNodeId && (text === '/start' || text.toLowerCase() === 'начать')) {
         const startNode = nodes.find((n: any) => n.type === 'start');
         if (startNode) {
@@ -700,6 +708,10 @@ async function startServer() {
       }
 
       if (startNodeId) {
+        // Clear any active state if starting fresh
+        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+          'scenarioState.active': false
+        });
         runFlow(userId, platform, chatId, startNodeId, nodes, edges).catch(e => console.error('Flow error:', e));
       }
     } catch (e) {
