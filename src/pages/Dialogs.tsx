@@ -37,6 +37,7 @@ interface Chat {
   lastMessageAt: any;
   unreadCount: number;
   tags?: string[];
+  tagColors?: Record<string, string>;
 }
 
 interface Message {
@@ -159,6 +160,64 @@ export default function Dialogs() {
     }
   };
 
+  const handleClearAllHistory = async () => {
+    if (!window.confirm('Вы уверены, что хотите очистить историю диалогов со ВСЕМИ пользователями? Сообщения будут удалены, но сами диалоги останутся.')) return;
+    
+    try {
+      let batch = writeBatch(db);
+      let operationCount = 0;
+      const MAX_BATCH_SIZE = 450; 
+
+      for (const chat of chats) {
+        const chatRef = doc(db, 'chats', chat.id);
+        batch.update(chatRef, {
+          lastMessage: '',
+          unreadCount: 0,
+          messageCount: 0
+        });
+        operationCount++;
+
+        if (operationCount >= MAX_BATCH_SIZE) {
+          await batch.commit();
+          batch = writeBatch(db);
+          operationCount = 0;
+        }
+      }
+      
+      if (operationCount > 0) {
+        await batch.commit();
+      }
+
+      // Delete messages
+      for (const chat of chats) {
+         const messagesRef = collection(db, 'chats', chat.id, 'messages');
+         const snapshot = await getDocs(messagesRef);
+         
+         let deleteBatch = writeBatch(db);
+         let deleteCount = 0;
+         
+         for (const doc of snapshot.docs) {
+             deleteBatch.delete(doc.ref);
+             deleteCount++;
+             if (deleteCount >= MAX_BATCH_SIZE) {
+                 await deleteBatch.commit();
+                 deleteBatch = writeBatch(db);
+                 deleteCount = 0;
+             }
+         }
+         if (deleteCount > 0) {
+             await deleteBatch.commit();
+         }
+      }
+
+      alert('История всех диалогов очищена.');
+      setSelectedChatId(null);
+    } catch (error) {
+      console.error('Error clearing all history:', error);
+      alert('Ошибка при очистке истории.');
+    }
+  };
+
   const handleClearHistory = async () => {
     if (!selectedChatId) return;
     if (window.confirm('Вы уверены, что хотите очистить историю сообщений этого чата?')) {
@@ -170,8 +229,13 @@ export default function Dialogs() {
         await batch.commit();
         
         await updateDoc(doc(db, 'chats', selectedChatId), {
-          lastMessage: 'История очищена',
-          lastMessageAt: serverTimestamp()
+          lastMessage: '', // Clear last message text
+          // lastMessageAt: serverTimestamp() // DO NOT update timestamp to preserve active status? 
+          // Actually user said "written messages cleared everywhere... except active today".
+          // If I update timestamp, they become active NOW. If I don't, they stay active if they were.
+          // But if I clear history, `lastMessage` is gone.
+          unreadCount: 0,
+          messageCount: 0
         });
       } catch (error) {
         console.error('Error clearing history:', error);
@@ -647,9 +711,16 @@ export default function Dialogs() {
               <StickyNote size={18} />
             </button>
             <button 
+              onClick={handleClearAllHistory}
+              className="p-2.5 bg-[#1a1a1a] rounded-xl text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+              title="Очистить историю ВСЕХ диалогов"
+            >
+              <MessageCircle size={18} className="text-red-400" />
+            </button>
+            <button 
               onClick={() => setBulkDeleteModalOpen(true)}
               className="p-2.5 bg-[#1a1a1a] rounded-xl text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-              title="Очистить все диалоги"
+              title="Удалить все диалоги (полностью)"
             >
               <Trash2 size={18} />
             </button>
@@ -710,11 +781,18 @@ export default function Dialogs() {
                   </p>
                   {chat.tags && chat.tags.length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
-                      {chat.tags.map(tag => (
-                        <span key={tag} className="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
-                          #{tag}
-                        </span>
-                      ))}
+                      {chat.tags.map(tag => {
+                        const color = chat.tagColors?.[tag] || '#a855f7'; // default purple
+                        return (
+                          <span 
+                            key={tag} 
+                            className="text-[9px] px-1.5 py-0.5 rounded text-white font-medium"
+                            style={{ backgroundColor: color }}
+                          >
+                            #{tag}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -757,11 +835,18 @@ export default function Dialogs() {
                 <div className="font-bold text-gray-100 text-sm flex items-center gap-2">
                   {selectedChat.customName || selectedChat.displayName || selectedChat.username}
                   {selectedChat.customName && <span className="text-[10px] text-gray-500 bg-white/5 px-1.5 rounded">Renamed</span>}
-                  {selectedChat.tags && selectedChat.tags.map(tag => (
-                    <span key={tag} className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
-                      #{tag}
-                    </span>
-                  ))}
+                  {selectedChat.tags && selectedChat.tags.map(tag => {
+                    const color = selectedChat.tagColors?.[tag] || '#a855f7';
+                    return (
+                      <span 
+                        key={tag} 
+                        className="text-[10px] px-1.5 py-0.5 rounded text-white font-medium"
+                        style={{ backgroundColor: color }}
+                      >
+                        #{tag}
+                      </span>
+                    );
+                  })}
                 </div>
                 <div className="text-xs text-green-500/80 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
@@ -1376,6 +1461,43 @@ export default function Dialogs() {
                       Написать в ЛС
                     </a>
                   </div>
+
+                  {selectedChat.tags && selectedChat.tags.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-white/5">
+                      <h4 className="text-sm font-medium text-gray-400 mb-3">Теги пользователя</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedChat.tags.map(tag => {
+                          const color = selectedChat.tagColors?.[tag] || '#a855f7';
+                          return (
+                            <div 
+                              key={tag} 
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-white group"
+                              style={{ backgroundColor: color }}
+                            >
+                              <span>#{tag}</span>
+                              <button 
+                                onClick={async () => {
+                                  if (window.confirm(`Удалить тег #${tag}?`)) {
+                                    try {
+                                      const chatRef = doc(db, 'chats', selectedChat.id);
+                                      const newTags = selectedChat.tags!.filter(t => t !== tag);
+                                      await updateDoc(chatRef, { tags: newTags });
+                                    } catch (e) {
+                                      console.error('Error removing tag:', e);
+                                    }
+                                  }
+                                }}
+                                className="p-0.5 hover:bg-black/20 rounded opacity-50 hover:opacity-100 transition-all"
+                                title="Удалить тег"
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-auto pt-6 border-t border-white/5">
                     <div className="text-xs text-gray-600 font-mono">

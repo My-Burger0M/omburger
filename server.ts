@@ -520,10 +520,14 @@ async function startServer() {
   };
 
   // Helper to add tag
-  const addTag = async (platform: string, chatId: string, tag: string) => {
+  const addTag = async (platform: string, chatId: string, tag: string, color?: string) => {
     try {
       const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
-      await setDoc(chatRef, { tags: arrayUnion(tag) }, { merge: true });
+      const updateData: any = { tags: arrayUnion(tag) };
+      if (color) {
+        updateData[`tagColors.${tag}`] = color;
+      }
+      await setDoc(chatRef, updateData, { merge: true });
       console.log(`Added tag ${tag} to ${platform}_${chatId}`);
     } catch (e) {
       console.error('Error adding tag:', e);
@@ -645,7 +649,7 @@ async function startServer() {
         continue;
       } else if (node.type === 'trigger') {
         if (node.data.tag) {
-          await addTag(platform, chatId, node.data.tag);
+          await addTag(platform, chatId, node.data.tag, node.data.tagColor);
         }
       }
 
@@ -686,7 +690,9 @@ async function startServer() {
       let startNodeId = null;
 
       if (payload) {
-        const triggerNode = nodes.find((n: any) => n.type === 'trigger' && n.data.refCode === payload);
+        // Find trigger node where the link ends with the payload
+        // e.g. link = "https://t.me/bot?start=promo", payload = "promo"
+        const triggerNode = nodes.find((n: any) => n.type === 'trigger' && n.data.link && n.data.link.endsWith(payload));
         if (triggerNode) {
           startNodeId = triggerNode.id;
         }
@@ -1254,6 +1260,53 @@ async function startServer() {
     }
     res.json({ success: true });
   });
+
+  // --- Scheduler Loop ---
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      // Query only by status to avoid needing a composite index
+      const q = query(
+        collection(db, 'scheduled_notifications'),
+        where('status', '==', 'pending')
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        
+        // Filter by scheduledAt in memory
+        if (data.scheduledAt && data.scheduledAt.toDate() > now) {
+          continue;
+        }
+
+        const { botToken, chatId, text } = data;
+        
+        try {
+          await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            chat_id: chatId,
+            text: text,
+            parse_mode: 'Markdown'
+          });
+          
+          await updateDoc(doc(db, 'scheduled_notifications', docSnap.id), {
+            status: 'sent',
+            sentAt: serverTimestamp()
+          });
+          console.log(`Scheduled notification sent: ${docSnap.id}`);
+        } catch (err: any) {
+          console.error(`Error sending scheduled notification ${docSnap.id}:`, err.message);
+          await updateDoc(doc(db, 'scheduled_notifications', docSnap.id), {
+            status: 'failed',
+            error: err.message
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Scheduler error:', e);
+    }
+  }, 60000); // Check every minute
 
   // --- Vite Middleware for Development ---
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {

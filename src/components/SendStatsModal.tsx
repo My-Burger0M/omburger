@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Send, AlertTriangle } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
+import { X, Calendar, Send, AlertTriangle, Clock } from 'lucide-react';
+import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { format, startOfMonth, endOfMonth, isSameMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { DateTime } from 'luxon';
 
 interface SendStatsModalProps {
   isOpen: boolean;
@@ -21,11 +22,13 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [tokens, setTokens] = useState<{ botToken: string; chatId: string } | null>(null);
+  const [scheduledTime, setScheduledTime] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setSuccess(false);
       setError(null);
+      setScheduledTime('');
       fetchTokens();
     }
   }, [isOpen]);
@@ -54,17 +57,9 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
     }
   };
 
-  const handleSend = async () => {
-    if (!tokens) return;
-    
-    setIsSending(true);
-    setError(null);
-    setSuccess(false);
-
-    try {
-      let message = '';
-      
-      if (selectedDate === 'month') {
+  const prepareMessage = () => {
+    let message = '';
+    if (selectedDate === 'month') {
         const monthName = format(currentDate, 'LLLL yyyy', { locale: ru });
         
         let totalTg = 0;
@@ -96,6 +91,53 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
           message += `Всего за день: ${dayData.tg + dayData.vk + dayData.max} активных пользователей`;
         }
       }
+      return message;
+  };
+
+  const handleSchedule = async () => {
+    if (!tokens || !currentUser || !scheduledTime) return;
+    setIsSending(true);
+    setError(null);
+
+    try {
+        const message = prepareMessage();
+        
+        // Parse scheduled time (input is local time string from datetime-local)
+        // Interpret as Moscow Time (UTC+3)
+        const mskTime = DateTime.fromISO(scheduledTime, { zone: 'Europe/Moscow' });
+        const scheduledTimestamp = mskTime.toJSDate();
+
+        await addDoc(collection(db, 'scheduled_notifications'), {
+            userId: currentUser.uid,
+            botToken: tokens.botToken,
+            chatId: tokens.chatId,
+            text: message,
+            scheduledAt: scheduledTimestamp,
+            status: 'pending',
+            createdAt: serverTimestamp()
+        });
+
+        setSuccess(true);
+        setTimeout(() => {
+            onClose();
+        }, 2000);
+    } catch (err: any) {
+        console.error('Error scheduling notification:', err);
+        setError('Ошибка при планировании уведомления.');
+    } finally {
+        setIsSending(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!tokens) return;
+    
+    setIsSending(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const message = prepareMessage();
 
       await axios.post(`https://api.telegram.org/bot${tokens.botToken}/sendMessage`, {
         chat_id: tokens.chatId,
@@ -183,6 +225,17 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
                 </button>
               </div>
             </div>
+
+            <div className="pt-4 border-t border-white/10">
+               <label className="block text-sm font-medium text-gray-300 mb-2">Отложенная отправка (по МСК):</label>
+               <input 
+                 type="datetime-local"
+                 value={scheduledTime}
+                 onChange={(e) => setScheduledTime(e.target.value)}
+                 className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+               />
+               <p className="text-xs text-gray-500 mt-1">Оставьте пустым для мгновенной отправки</p>
+            </div>
           </div>
         </div>
 
@@ -194,16 +247,18 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
             Отмена
           </button>
           <button
-            onClick={handleSend}
+            onClick={scheduledTime ? handleSchedule : handleSend}
             disabled={isSending || !tokens || !!error}
-            className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-6 py-2 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                scheduledTime ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-500 hover:bg-blue-600'
+            }`}
           >
             {isSending ? (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
               <>
-                <Send size={18} />
-                Отправить
+                {scheduledTime ? <Clock size={18} /> : <Send size={18} />}
+                {scheduledTime ? 'Запланировать' : 'Отправить'}
               </>
             )}
           </button>

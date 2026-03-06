@@ -125,12 +125,22 @@ const TriggerNode = ({ data }: { data: any }) => (
       <LinkIcon size={14} className="text-purple-400" />
       <span className="text-xs font-bold text-purple-100">{data.label || 'Вход по ссылке'}</span>
     </div>
-    <div className="p-3 text-xs text-gray-400 flex flex-col gap-1">
-      <div className="truncate text-purple-300 font-mono text-[9px] bg-purple-500/10 p-1 rounded select-all" title="Скопируйте эту ссылку (замените bot_name/club_id на свои)">
-        {data.platform === 'vk' ? `https://vk.me/club_id?ref=${data.refCode || 'ref'}` : `https://t.me/bot_name?start=${data.refCode || 'ref'}`}
+    <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
+      <div className="truncate text-purple-300 font-mono text-[9px] bg-purple-500/10 p-1.5 rounded select-all" title={data.link || 'Ссылка не указана'}>
+        {data.link || 'Вставьте ссылку в настройках'}
       </div>
-      <div className="truncate mt-1">
-        <span className="text-gray-500">Тег:</span> <span className="text-white">{data.tag || 'нет'}</span>
+      <div className="flex items-center gap-2 mt-1">
+        <span className="text-gray-500">Тег:</span>
+        {data.tag ? (
+          <span 
+            className="px-2 py-0.5 rounded text-[10px] font-medium text-white"
+            style={{ backgroundColor: data.tagColor || '#6b7280' }}
+          >
+            {data.tag}
+          </span>
+        ) : (
+          <span className="text-gray-600">нет</span>
+        )}
       </div>
     </div>
     <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-purple-500" />
@@ -299,7 +309,8 @@ export default function BotScenarios() {
         timeout: 0,
         actions: type === 'action' ? [{ type: 'add_tag', tag: '' }] : [],
         tag: '',
-        refCode: type === 'trigger' ? `ref_${Math.floor(Math.random() * 10000)}` : '',
+        tagColor: type === 'trigger' ? '#3b82f6' : '',
+        link: type === 'trigger' ? '' : '',
         command: type === 'command' ? '/privet' : '',
         keyboard: [],
         platform: selectedPlatform
@@ -488,23 +499,17 @@ export default function BotScenarios() {
               {selectedNode.data.type === 'trigger' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Ref-код (параметр ссылки)</label>
+                    <label className="block text-xs text-gray-400 mb-1">Ваша ссылка</label>
                     <input 
                       type="text" 
-                      value={selectedNode.data.refCode as string || ''} 
-                      onChange={(e) => updateNodeData('refCode', e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
-                      placeholder="Например: promo_2026"
+                      value={selectedNode.data.link as string || ''} 
+                      onChange={(e) => updateNodeData('link', e.target.value)}
+                      placeholder={selectedPlatform === 'vk' ? "https://vk.me/club_id?ref=promo" : "https://t.me/bot_name?start=promo"}
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
-                    <div className="mt-2 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                      <p className="text-[10px] text-purple-300 mb-1">Ссылка для входа:</p>
-                      <p className="text-xs text-white font-mono break-all select-all">
-                        {selectedPlatform === 'vk' 
-                          ? `https://vk.me/club_id?ref=${selectedNode.data.refCode || 'ref'}`
-                          : `https://t.me/YourBot?start=${selectedNode.data.refCode || 'ref'}`
-                        }
-                      </p>
-                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Вставьте полную ссылку, по которой пользователи будут переходить в бота.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Присвоить тег при переходе</label>
@@ -513,8 +518,27 @@ export default function BotScenarios() {
                       value={selectedNode.data.tag as string || ''} 
                       onChange={(e) => updateNodeData('tag', e.target.value)}
                       placeholder="Например: from_promo"
-                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500 mb-2"
                     />
+                    
+                    <label className="block text-xs text-gray-400 mb-1">Цвет тега</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        '#6b7280', '#ef4444', '#f97316', '#eab308', 
+                        '#22c55e', '#3b82f6', '#a855f7', '#ec4899'
+                      ].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => updateNodeData('tagColor', color)}
+                          className={`w-6 h-6 rounded-full border-2 transition-all ${
+                            (selectedNode.data.tagColor || '#6b7280') === color 
+                              ? 'border-white scale-110' 
+                              : 'border-transparent hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

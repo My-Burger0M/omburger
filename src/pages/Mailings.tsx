@@ -12,6 +12,7 @@ interface ChatUser {
   displayName?: string;
   avatar?: string;
   tags?: string[];
+  tagColors?: Record<string, string>;
 }
 
 export default function Mailings() {
@@ -171,11 +172,18 @@ export default function Mailings() {
                     </div>
                     {user.tags && user.tags.length > 0 && (
                       <div className="flex gap-1 flex-wrap justify-end max-w-[200px]">
-                        {user.tags.map(tag => (
-                          <span key={tag} className="text-[10px] bg-white/10 text-gray-300 px-2 py-1 rounded">
-                            {tag}
-                          </span>
-                        ))}
+                        {user.tags.map(tag => {
+                          const color = user.tagColors?.[tag] || '#a855f7';
+                          return (
+                            <span 
+                              key={tag} 
+                              className="text-[10px] px-2 py-1 rounded text-white font-medium"
+                              style={{ backgroundColor: color }}
+                            >
+                              {tag}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
