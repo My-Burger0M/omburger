@@ -11,6 +11,9 @@ import BotScenarios from './pages/BotScenarios';
 import Dialogs from './pages/Dialogs';
 import Mailings from './pages/Mailings';
 import CRM from './pages/CRM';
+import EventCalendar from './pages/EventCalendar';
+import Teams from './pages/Teams';
+import KnowledgeBase from './pages/KnowledgeBase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -51,6 +54,9 @@ function AppContent() {
                 <Route path="/dialogs" element={<Dialogs />} />
                 <Route path="/mailings" element={<Mailings />} />
                 <Route path="/crm" element={<CRM />} />
+                <Route path="/calendar" element={<EventCalendar />} />
+                <Route path="/teams" element={<Teams />} />
+                <Route path="/knowledge-base" element={<KnowledgeBase />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>

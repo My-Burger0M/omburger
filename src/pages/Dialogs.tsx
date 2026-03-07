@@ -467,8 +467,7 @@ export default function Dialogs() {
 
               const sanitizedKeyboard = sanitizeData(currentKeyboard);
 
-              const API_URL = import.meta.env.VITE_API_URL || '';
-              await axios.post(`${API_URL}/api/messages/send`, {
+              await axios.post('/api/messages/send', {
                 chatId: chat.chatId,
                 platform: chat.platform,
                 text: note.text,
@@ -612,8 +611,7 @@ export default function Dialogs() {
     setShowKeyboardBuilder(false);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      await axios.post(`${API_URL}/api/messages/send`, {
+      await axios.post('/api/messages/send', {
         chatId: chat.chatId,
         platform: chat.platform,
         text: messageText,
@@ -881,9 +879,30 @@ export default function Dialogs() {
                   {msg.mediaUrl && (
                     <div className="mb-2 rounded-xl overflow-hidden border border-white/10 max-w-sm">
                       {msg.mediaType === 'video' ? (
-                        <video src={msg.mediaUrl} controls className="w-full h-auto" />
+                        <div className="bg-[#2a2a2a] p-3 flex items-center gap-2 text-gray-400 text-sm">
+                          <Video size={16} />
+                          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="hover:text-white transition-colors truncate max-w-[200px]">
+                            (Видео) {msg.mediaUrl}
+                          </a>
+                        </div>
+                      ) : msg.mediaType === 'voice' ? (
+                        <div className="bg-[#2a2a2a] p-3 flex flex-col gap-2 text-gray-400 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Mic size={16} />
+                            <span>(Голосовое сообщение)</span>
+                          </div>
+                          <audio src={msg.mediaUrl} controls className="h-8 w-full max-w-[200px]" />
+                          <div className="text-[10px] text-red-400">Удалится через 1 мин после получения</div>
+                        </div>
+                      ) : msg.mediaType === 'animation' ? (
+                        <div className="bg-[#2a2a2a] p-3 flex items-center gap-2 text-gray-400 text-sm">
+                          <PlayCircle size={16} />
+                          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="hover:text-white transition-colors truncate max-w-[200px]">
+                            (GIF) {msg.mediaUrl}
+                          </a>
+                        </div>
                       ) : (
-                        <img src={msg.mediaUrl} alt="Attachment" className="w-full h-auto" />
+                        <img src={msg.mediaUrl} alt="Attachment" className="w-full h-auto max-h-64 object-contain" />
                       )}
                     </div>
                   )}
@@ -950,8 +969,33 @@ export default function Dialogs() {
                     />
                   </div>
                   
+                  <div className="flex gap-2 items-center">
+                    <input 
+                      type="text" 
+                      placeholder="Или вставьте ссылку на фото/видео (https://...)" 
+                      value={mediaUrl}
+                      onChange={(e) => {
+                        setMediaUrl(e.target.value);
+                        if (e.target.value.match(/\.(mp4|mov|avi|webm)$/i) || e.target.value.includes('video') || e.target.value.includes('t.me/c/')) {
+                          setMediaType('video');
+                        } else {
+                          setMediaType('photo');
+                        }
+                      }}
+                      className="flex-1 bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500"
+                    />
+                    <select
+                      value={mediaType}
+                      onChange={(e) => setMediaType(e.target.value as 'photo' | 'video')}
+                      className="bg-[#111] border border-white/10 rounded-lg px-2 py-2 text-xs text-gray-300 outline-none focus:border-purple-500"
+                    >
+                      <option value="photo">Фото</option>
+                      <option value="video">Видео</option>
+                    </select>
+                  </div>
+                  
                   {uploading && (
-                    <div className="mb-2">
+                    <div className="mt-2">
                         <div className="flex justify-between text-xs text-gray-400 mb-1">
                             <span>Загрузка...</span>
                             <span>{uploadProgress}%</span>
@@ -964,8 +1008,6 @@ export default function Dialogs() {
                         </div>
                     </div>
                   )}
-
-                  {/* URL input removed as requested */}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1356,12 +1398,17 @@ export default function Dialogs() {
                             
                             <input 
                                 type="datetime-local" 
-                                className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-white mb-4 text-sm"
+                                className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-white mb-2 text-sm"
                                 value={scheduledTime}
                                 onChange={(e) => setScheduledTime(e.target.value)}
                             />
+                            {scheduledTime && (
+                                <div className="text-xs text-purple-400 mb-4 bg-purple-500/10 p-2 rounded border border-purple-500/20">
+                                    Будет отправлено: <strong>{DateTime.fromISO(scheduledTime, { zone: 'Europe/Moscow' }).toFormat('dd.MM.yyyy HH:mm')} (МСК)</strong>
+                                </div>
+                            )}
 
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 mt-2">
                                 <button 
                                     onClick={handleScheduleNote}
                                     className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg text-sm font-bold"
@@ -1464,7 +1511,24 @@ export default function Dialogs() {
 
                   {selectedChat.tags && selectedChat.tags.length > 0 && (
                     <div className="mt-6 pt-6 border-t border-white/5">
-                      <h4 className="text-sm font-medium text-gray-400 mb-3">Теги пользователя</h4>
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-400">Теги пользователя</h4>
+                        <button 
+                          onClick={async () => {
+                            if (window.confirm('Удалить все теги у этого пользователя?')) {
+                              try {
+                                const chatRef = doc(db, 'chats', selectedChat.id);
+                                await updateDoc(chatRef, { tags: [] });
+                              } catch (e) {
+                                console.error('Error removing all tags:', e);
+                              }
+                            }
+                          }}
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                        >
+                          Удалить все
+                        </button>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {selectedChat.tags.map(tag => {
                           const color = selectedChat.tagColors?.[tag] || '#a855f7';

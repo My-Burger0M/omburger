@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Settings as SettingsIcon, LogOut, Package, PieChart, FileText, Bot, MessageSquare, Mail, Users } from 'lucide-react';
+import { LayoutDashboard, Settings as SettingsIcon, LogOut, Package, PieChart, FileText, Bot, MessageSquare, Mail, Users, Calendar, UsersRound, BookOpen } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { auth } from '../firebase';
@@ -12,6 +12,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const botsItems: MenuItem[] = [
+  { id: 'scenarios', path: '/scenarios', label: 'Сценарии ботов' },
+  { id: 'dialogs', path: '/dialogs', label: 'Диалоги' },
+  { id: 'mailings', path: '/mailings', label: 'Рассылки' },
+  { id: 'crm', path: '/crm', label: 'CRM Пользователи' },
+];
+
+const automationItems: MenuItem[] = [
+  { id: 'calendar', path: '/calendar', label: 'Календарь событий' },
+  { id: 'teams', path: '/teams', label: 'Команды' },
+  { id: 'knowledge-base', path: '/knowledge-base', label: 'База знаний' },
+];
+
 const defaultIcons: Record<string, React.ReactNode> = {
   dashboard: <LayoutDashboard size={20} />,
   products: <Package size={20} />,
@@ -21,6 +34,9 @@ const defaultIcons: Record<string, React.ReactNode> = {
   dialogs: <MessageSquare size={20} />,
   mailings: <Mail size={20} />,
   crm: <Users size={20} />,
+  calendar: <Calendar size={20} />,
+  teams: <UsersRound size={20} />,
+  'knowledge-base': <BookOpen size={20} />,
   settings: <SettingsIcon size={20} />,
 };
 
@@ -35,13 +51,6 @@ const dashboardItems: MenuItem[] = [
   { id: 'products', path: '/products', label: 'Товары' },
   { id: 'unit', path: '/unit', label: 'Юнит-экономика' },
   { id: 'ofr', path: '/ofr', label: 'ОФР' },
-];
-
-const botsItems: MenuItem[] = [
-  { id: 'scenarios', path: '/scenarios', label: 'Сценарии ботов' },
-  { id: 'dialogs', path: '/dialogs', label: 'Диалоги' },
-  { id: 'mailings', path: '/mailings', label: 'Рассылки' },
-  { id: 'crm', path: '/crm', label: 'CRM Пользователи' },
 ];
 
 function SidebarMenuItem({ item }: { item: MenuItem }) {
@@ -149,12 +158,17 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Automation Group (Static for now) */}
+        {/* Automation Group */}
         <div>
           <div className="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wider px-3">
             Автоматизация
           </div>
           <div className="space-y-1">
+            {automationItems.map(item => (
+              <div key={item.id}>
+                <SidebarMenuItem item={item} />
+              </div>
+            ))}
             <NavLink
               to="/settings"
               className={({ isActive }) =>

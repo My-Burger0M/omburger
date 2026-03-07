@@ -3,11 +3,22 @@ import express from 'express';
 import cors from 'cors';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth } from './server-firebase';
-import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
 import axios from 'axios';
+
+// Suppress Firestore gRPC stream errors in Node.js
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (args[0] && typeof args[0] === 'string' && args[0].includes("GrpcConnection RPC 'Listen' stream") && args[0].includes("Code: 13")) {
+    return; // Suppress this specific noisy error
+  }
+  originalConsoleError(...args);
+};
+
+setLogLevel('silent'); // Also suppress internal firestore logs
 
 async function startServer() {
   const app = express();
@@ -21,6 +32,11 @@ async function startServer() {
   }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Health Check Endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   // --- Firebase Auth for Server ---
   try {
@@ -229,7 +245,7 @@ async function startServer() {
               }
             });
 
-            tgBot.on(['text', 'photo', 'video', 'sticker'], async (ctx) => {
+            tgBot.on(['text', 'photo', 'video', 'sticker', 'voice', 'animation'], async (ctx) => {
               const message = ctx.message;
               const chatId = ctx.chat.id.toString();
               const messageId = message.message_id.toString();
@@ -272,6 +288,24 @@ async function startServer() {
                   if (!text) text = '[Видео]';
                 } catch (e) {
                   console.error('Error fetching video link:', e);
+                }
+              } else if ('animation' in message) {
+                try {
+                  const fileLink = await ctx.telegram.getFileLink(message.animation.file_id);
+                  mediaUrl = fileLink.href;
+                  mediaType = 'animation';
+                  if (!text) text = '[GIF]';
+                } catch (e) {
+                  console.error('Error fetching animation link:', e);
+                }
+              } else if ('voice' in message) {
+                try {
+                  const fileLink = await ctx.telegram.getFileLink(message.voice.file_id);
+                  mediaUrl = fileLink.href;
+                  mediaType = 'voice';
+                  if (!text) text = '[Голосовое сообщение]';
+                } catch (e) {
+                  console.error('Error fetching voice link:', e);
                 }
               } else if ('sticker' in message) {
                 try {
@@ -436,7 +470,7 @@ async function startServer() {
             } catch (e) { await ctx.reply('Ошибка'); }
           });
 
-          tgBot.on(['text', 'photo', 'video', 'sticker'], async (ctx) => {
+          tgBot.on(['text', 'photo', 'video', 'sticker', 'voice', 'animation'], async (ctx) => {
             const message = ctx.message;
             const chatId = ctx.chat.id.toString();
             const user = ctx.from;
@@ -463,6 +497,20 @@ async function startServer() {
                 mediaUrl = fileLink.href;
                 mediaType = 'video';
                 if (!text) text = '[Видео]';
+              } catch (e) {}
+            } else if ('animation' in message) {
+              try {
+                const fileLink = await ctx.telegram.getFileLink(message.animation.file_id);
+                mediaUrl = fileLink.href;
+                mediaType = 'animation';
+                if (!text) text = '[GIF]';
+              } catch (e) {}
+            } else if ('voice' in message) {
+              try {
+                const fileLink = await ctx.telegram.getFileLink(message.voice.file_id);
+                mediaUrl = fileLink.href;
+                mediaType = 'voice';
+                if (!text) text = '[Голосовое сообщение]';
               } catch (e) {}
             } else if ('sticker' in message) {
               try {
@@ -651,6 +699,8 @@ async function startServer() {
         if (node.data.tag) {
           await addTag(platform, chatId, node.data.tag, node.data.tagColor);
         }
+      } else if (node.type === 'command') {
+        // Command node acts as a pass-through when reached via flow (e.g. from a Trigger node)
       }
 
       // Find next node
@@ -776,6 +826,20 @@ async function startServer() {
       if (mediaType) messageData.mediaType = mediaType;
 
       await setDoc(msgRef, messageData);
+
+      if (mediaType === 'voice') {
+        setTimeout(async () => {
+          try {
+            await updateDoc(msgRef, {
+              mediaUrl: null,
+              text: '[Голосовое сообщение удалено]'
+            });
+            console.log(`Voice message ${msgRef.id} auto-deleted after 1 minute`);
+          } catch (e) {
+            console.error('Error auto-deleting voice message:', e);
+          }
+        }, 60000);
+      }
 
       await updateStats(platform, chatId);
       console.log(`Message saved from ${platform} user ${username}`);

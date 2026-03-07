@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Users, Send, Filter, Tag as TagIcon, Search } from 'lucide-react';
+import { collection, getDocs, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
+import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ChatUser {
@@ -15,6 +15,15 @@ interface ChatUser {
   tagColors?: Record<string, string>;
 }
 
+interface FailedMessage {
+  id: string;
+  chatId: string;
+  platform: string;
+  error: string;
+  text: string;
+  createdAt: any;
+}
+
 export default function Mailings() {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -22,12 +31,27 @@ export default function Mailings() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tg', 'vk']);
   
   const [messageText, setMessageText] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState<'photo' | 'video'>('photo');
+  const [keyboard, setKeyboard] = useState<any[][]>([]);
+  
+  // Keyboard builder state
+  const [btnLabel, setBtnLabel] = useState('');
+  const [btnUrl, setBtnUrl] = useState('');
+  const [btnColor, setBtnColor] = useState('secondary');
+
   const [isSending, setIsSending] = useState(false);
+  
+  // Failed messages state
+  const [failedMessages, setFailedMessages] = useState<FailedMessage[]>([]);
+  const [showFailedModal, setShowFailedModal] = useState(false);
 
   useEffect(() => {
     fetchUsers();
+    fetchFailedMessages();
   }, []);
 
   const fetchUsers = async () => {
@@ -53,20 +77,41 @@ export default function Mailings() {
     }
   };
 
+  const fetchFailedMessages = async () => {
+    try {
+      const q = query(collection(db, 'scheduled_messages'), where('status', '==', 'failed'));
+      const snapshot = await getDocs(q);
+      const failed: FailedMessage[] = [];
+      snapshot.forEach(doc => {
+        failed.push({ id: doc.id, ...doc.data() } as FailedMessage);
+      });
+      setFailedMessages(failed.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+    } catch (error) {
+      console.error('Error fetching failed messages:', error);
+    }
+  };
+
   const toggleTagFilter = (tag: string) => {
     setSelectedTags(prev => 
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
     );
   };
 
+  const togglePlatformFilter = (platform: string) => {
+    setSelectedPlatforms(prev => 
+      prev.includes(platform) ? prev.filter(p => p !== platform) : [...prev, platform]
+    );
+  };
+
   const filteredUsers = users.filter(user => {
     const matchesSearch = (user.displayName || user.username || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTags = selectedTags.length === 0 || selectedTags.every(tag => user.tags?.includes(tag));
-    return matchesSearch && matchesTags;
+    const matchesPlatform = selectedPlatforms.includes(user.platform);
+    return matchesSearch && matchesTags && matchesPlatform;
   });
 
   const handleSendBroadcast = async () => {
-    if (!messageText.trim() || filteredUsers.length === 0 || !currentUser) return;
+    if ((!messageText.trim() && !mediaUrl) || filteredUsers.length === 0 || !currentUser) return;
     
     if (!confirm(`Отправить сообщение ${filteredUsers.length} пользователям?`)) return;
 
@@ -79,6 +124,9 @@ export default function Mailings() {
           platform: user.platform,
           chatId: user.chatId,
           text: messageText,
+          mediaUrl: mediaUrl || null,
+          mediaType: mediaUrl ? mediaType : null,
+          keyboard: keyboard.length > 0 ? { inline_keyboard: keyboard } : null,
           status: 'pending',
           scheduledAt: serverTimestamp(),
           createdAt: serverTimestamp()
@@ -87,6 +135,8 @@ export default function Mailings() {
       }
       alert(`Рассылка успешно запланирована для ${sentCount} пользователей.`);
       setMessageText('');
+      setMediaUrl('');
+      setKeyboard([]);
     } catch (error) {
       console.error('Error sending broadcast:', error);
       alert('Ошибка при отправке рассылки');
@@ -95,9 +145,31 @@ export default function Mailings() {
     }
   };
 
+  const addKeyboardButton = () => {
+    if (!btnLabel) return;
+    const currentKeyboard = [...keyboard];
+    if (currentKeyboard.length === 0) currentKeyboard.push([]);
+    const lastRowIndex = currentKeyboard.length - 1;
+    currentKeyboard[lastRowIndex].push({ text: btnLabel, url: btnUrl || undefined, color: btnColor });
+    setKeyboard(currentKeyboard);
+    setBtnLabel('');
+    setBtnUrl('');
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold mb-8">Рассылки</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Рассылки</h1>
+        {failedMessages.length > 0 && (
+          <button 
+            onClick={() => setShowFailedModal(true)}
+            className="bg-red-500/20 text-red-400 hover:bg-red-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors"
+          >
+            <AlertCircle size={18} />
+            Ошибки рассылок ({failedMessages.length})
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Filters and Users List */}
@@ -120,28 +192,54 @@ export default function Mailings() {
               </div>
             </div>
 
-            {allTags.length > 0 && (
-              <div className="mb-6">
+            <div className="mb-6 space-y-4">
+              <div>
                 <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
-                  <Filter size={16} /> Фильтр по тегам:
+                  <Filter size={16} /> Фильтр по соцсетям:
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {allTags.map(tag => (
-                    <button
-                      key={tag}
-                      onClick={() => toggleTagFilter(tag)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${
-                        selectedTags.includes(tag)
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-[#222] text-gray-400 hover:bg-[#333]'
-                      }`}
-                    >
-                      <TagIcon size={12} /> {tag}
-                    </button>
-                  ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => togglePlatformFilter('tg')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      selectedPlatforms.includes('tg') ? 'bg-[#229ED9] text-white' : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                    }`}
+                  >
+                    Telegram
+                  </button>
+                  <button
+                    onClick={() => togglePlatformFilter('vk')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      selectedPlatforms.includes('vk') ? 'bg-[#0077FF] text-white' : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                    }`}
+                  >
+                    ВКонтакте
+                  </button>
                 </div>
               </div>
-            )}
+
+              {allTags.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
+                    <TagIcon size={16} /> Фильтр по тегам:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {allTags.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${
+                          selectedTags.includes(tag)
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
               {loading ? (
@@ -203,25 +301,122 @@ export default function Mailings() {
             
             <div className="space-y-4">
               <div>
+                <label className="block text-sm text-gray-400 mb-2">Медиа (ссылка на фото/видео)</label>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => setMediaType('photo')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors ${
+                      mediaType === 'photo' ? 'bg-purple-600 text-white' : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                    }`}
+                  >
+                    <ImageIcon size={14} /> Фото
+                  </button>
+                  <button
+                    onClick={() => setMediaType('video')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors ${
+                      mediaType === 'video' ? 'bg-purple-600 text-white' : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                    }`}
+                  >
+                    <Video size={14} /> Видео
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  placeholder="https://t.me/c/..."
+                  className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm text-gray-400 mb-2">Текст сообщения</label>
                 <textarea
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Введите текст рассылки..."
-                  className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 min-h-[200px] resize-none"
+                  className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 min-h-[120px] resize-none"
                 />
+              </div>
+
+              {/* Keyboard Builder */}
+              <div className="border border-white/5 rounded-xl p-4 bg-[#222] space-y-3">
+                <div className="text-sm font-medium text-gray-300">Инлайн-кнопки</div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <input 
+                    placeholder="Текст кнопки" 
+                    value={btnLabel}
+                    onChange={e => setBtnLabel(e.target.value)}
+                    className="bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                  />
+                  <input 
+                    placeholder="URL (ссылка)" 
+                    value={btnUrl}
+                    onChange={e => setBtnUrl(e.target.value)}
+                    className="bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none"
+                  />
+                  <select 
+                    value={btnColor}
+                    onChange={e => setBtnColor(e.target.value)}
+                    className="bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none col-span-2"
+                  >
+                    <option value="primary">Primary (Синий)</option>
+                    <option value="secondary">Secondary (Белый)</option>
+                    <option value="positive">Positive (Зеленый)</option>
+                    <option value="negative">Negative (Красный)</option>
+                  </select>
+                </div>
+
+                <button 
+                  onClick={addKeyboardButton}
+                  className="w-full bg-[#333] hover:bg-[#444] text-gray-300 text-xs py-2 rounded-lg transition-colors"
+                >
+                  + Добавить кнопку
+                </button>
+                
+                <div className="flex flex-col gap-2 mt-3">
+                  {keyboard.map((row, rIndex) => (
+                    <div key={rIndex} className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                      {row.map((btn, bIndex) => (
+                        <div key={bIndex} className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-2 whitespace-nowrap ${
+                          btn.color === 'positive' ? 'bg-green-900/30 border-green-500/30 text-green-400' :
+                          btn.color === 'negative' ? 'bg-red-900/30 border-red-500/30 text-red-400' :
+                          btn.color === 'secondary' ? 'bg-white/10 border-white/20 text-gray-300' :
+                          'bg-blue-900/30 border-blue-500/30 text-blue-400'
+                        }`}>
+                          {btn.text}
+                          <button onClick={() => {
+                            const newKeyboard = [...keyboard];
+                            newKeyboard[rIndex] = newKeyboard[rIndex].filter((_, i) => i !== bIndex);
+                            if (newKeyboard[rIndex].length === 0) newKeyboard.splice(rIndex, 1);
+                            setKeyboard(newKeyboard);
+                          }} className="hover:text-white"><X size={12} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {keyboard.length > 0 && (
+                    <button 
+                      onClick={() => setKeyboard([...keyboard, []])}
+                      className="text-xs text-gray-500 hover:text-purple-400 text-left mt-1"
+                    >
+                      + Добавить новый ряд
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4">
                 <div className="text-sm text-purple-200 font-medium mb-1">Получатели: {filteredUsers.length} чел.</div>
                 <div className="text-xs text-purple-300/70">
-                  Сообщение будет отправлено всем пользователям из списка слева. Используйте фильтры для точной настройки аудитории.
+                  Сообщение будет отправлено всем пользователям из списка слева.
                 </div>
               </div>
 
               <button
                 onClick={handleSendBroadcast}
-                disabled={isSending || filteredUsers.length === 0 || !messageText.trim()}
+                disabled={isSending || filteredUsers.length === 0 || (!messageText.trim() && !mediaUrl)}
                 className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-400 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 {isSending ? (
@@ -237,6 +432,51 @@ export default function Mailings() {
           </div>
         </div>
       </div>
+
+      {/* Failed Messages Modal */}
+      {showFailedModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <AlertCircle className="text-red-500" />
+                Ошибки рассылок
+              </h2>
+              <button onClick={() => setShowFailedModal(false)} className="text-gray-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+              {failedMessages.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">Нет ошибок рассылок</div>
+              ) : (
+                failedMessages.map(msg => {
+                  const user = users.find(u => u.chatId === msg.chatId && u.platform === msg.platform);
+                  return (
+                    <div key={msg.id} className="bg-[#222] border border-red-500/20 rounded-xl p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="font-medium text-white">
+                          {user ? (user.displayName || user.username) : `ID: ${msg.chatId}`}
+                          <span className="text-xs text-gray-500 ml-2">({msg.platform})</span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {msg.createdAt?.toDate().toLocaleString('ru-RU')}
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-400 mb-2 line-clamp-2">
+                        {msg.text || '[Медиа сообщение]'}
+                      </div>
+                      <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">
+                        {msg.error}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -121,6 +121,7 @@ const ConditionNode = ({ data }: { data: any }) => (
 
 const TriggerNode = ({ data }: { data: any }) => (
   <div className="bg-[#1a1a1a] border border-purple-500/50 rounded-xl w-64 shadow-lg shadow-purple-900/20">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500" />
     <div className="bg-purple-500/10 p-2 rounded-t-xl border-b border-purple-500/20 flex items-center gap-2">
       <LinkIcon size={14} className="text-purple-400" />
       <span className="text-xs font-bold text-purple-100">{data.label || 'Вход по ссылке'}</span>
@@ -149,6 +150,7 @@ const TriggerNode = ({ data }: { data: any }) => (
 
 const CommandNode = ({ data }: { data: any }) => (
   <div className="bg-[#1a1a1a] border border-pink-500/50 rounded-xl w-56 shadow-lg shadow-pink-900/20">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-pink-500" />
     <div className="bg-pink-500/10 p-2 rounded-t-xl border-b border-pink-500/20 flex items-center gap-2">
       <MessageSquare size={14} className="text-pink-400" />
       <span className="text-xs font-bold text-pink-100">{data.label || 'Команда'}</span>
@@ -255,8 +257,7 @@ export default function BotScenarios() {
       }
 
       // Check bot status on the server
-      const API_URL = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${API_URL}/api/bot/status`);
+      const response = await fetch('/api/bot/status');
       const status = await response.json();
 
       if (selectedPlatform === 'tg' && !status.tg) {
