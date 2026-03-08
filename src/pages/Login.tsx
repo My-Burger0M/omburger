@@ -8,7 +8,21 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logo, setLogo] = useState<string | null>(localStorage.getItem('admin_logo'));
   const navigate = useNavigate();
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setLogo(base64);
+        localStorage.setItem('admin_logo', base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +42,25 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4 text-white font-sans">
       <div className="bg-[#1a1a1a] p-8 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
-        <div className="flex justify-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center">
-            <span className="text-3xl font-bold italic">OM</span>
-          </div>
+        <div className="flex justify-center mb-8 relative">
+          <label className="cursor-pointer group relative">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center overflow-hidden shadow-lg transition-transform group-hover:scale-105">
+              {logo ? (
+                <img src={logo} alt="Logo" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl font-bold italic">OM</span>
+              )}
+            </div>
+            <div className="absolute inset-0 bg-black/50 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <span className="text-[10px] text-white font-medium text-center px-1">Изменить<br/>лого</span>
+            </div>
+            <input 
+              type="file" 
+              accept="image/*" 
+              onChange={handleLogoUpload} 
+              className="hidden" 
+            />
+          </label>
         </div>
         
         <h2 className="text-2xl font-bold mb-6 text-center">

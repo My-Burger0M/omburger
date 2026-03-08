@@ -53,11 +53,12 @@ const dashboardItems: MenuItem[] = [
   { id: 'ofr', path: '/ofr', label: 'ОФР' },
 ];
 
-function SidebarMenuItem({ item }: { item: MenuItem }) {
+function SidebarMenuItem({ item, onClick }: { item: MenuItem, onClick?: () => void }) {
   return (
     <div className="relative group">
       <NavLink
         to={item.path}
+        onClick={onClick}
         className={({ isActive }) =>
           cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 relative overflow-hidden",
@@ -90,7 +91,7 @@ function SidebarMenuItem({ item }: { item: MenuItem }) {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { url: logoUrl, uploadImage, loading } = useFirebaseImage('logo');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -138,7 +139,7 @@ export default function Sidebar() {
           <div className="space-y-1">
             {dashboardItems.map(item => (
               <div key={item.id}>
-                <SidebarMenuItem item={item} />
+                <SidebarMenuItem item={item} onClick={onClose} />
               </div>
             ))}
           </div>
@@ -152,7 +153,7 @@ export default function Sidebar() {
           <div className="space-y-1">
             {botsItems.map(item => (
               <div key={item.id}>
-                <SidebarMenuItem item={item} />
+                <SidebarMenuItem item={item} onClick={onClose} />
               </div>
             ))}
           </div>
@@ -166,11 +167,12 @@ export default function Sidebar() {
           <div className="space-y-1">
             {automationItems.map(item => (
               <div key={item.id}>
-                <SidebarMenuItem item={item} />
+                <SidebarMenuItem item={item} onClick={onClose} />
               </div>
             ))}
             <NavLink
               to="/settings"
+              onClick={onClose}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 relative overflow-hidden",

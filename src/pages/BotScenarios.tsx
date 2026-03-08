@@ -169,11 +169,17 @@ export default function BotScenarios() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           const loadedNodes = data.nodes || initialNodes;
-          // Ensure platform is set for trigger nodes
-          const updatedNodes = loadedNodes.map((n: any) => ({
-            ...n,
-            data: { ...n.data, platform: selectedPlatform }
-          }));
+          // Ensure platform is set for trigger nodes and normalize keyboard
+          const updatedNodes = loadedNodes.map((n: any) => {
+            let kb = n.data.keyboard || [];
+            if (kb.length > 0 && kb[0].buttons) {
+               kb = kb.map((row: any) => row.buttons);
+            }
+            return {
+              ...n,
+              data: { ...n.data, platform: selectedPlatform, keyboard: kb }
+            };
+          });
           setNodes(updatedNodes);
           setEdges(data.edges || initialEdges);
           setBotActive(data.isActive || false);
@@ -191,11 +197,27 @@ export default function BotScenarios() {
 
   const handleSave = async () => {
     if (!currentUser) return;
+    if (!window.confirm('Вы уверены, что хотите сохранить сценарий?')) return;
     setIsSaving(true);
     try {
       const docRef = doc(db, 'users', currentUser.uid, 'settings', `scenario_${selectedPlatform}`);
+      
+      // Serialize keyboards to avoid nested array errors in Firestore
+      const serializedNodes = nodes.map(node => {
+        if (node.data.keyboard && Array.isArray(node.data.keyboard)) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              keyboard: node.data.keyboard.map(row => ({ buttons: Array.isArray(row) ? row : (row.buttons || []) }))
+            }
+          };
+        }
+        return node;
+      });
+
       await setDoc(docRef, {
-        nodes,
+        nodes: serializedNodes,
         edges,
         isActive: botActive
       }, { merge: true });
@@ -210,6 +232,7 @@ export default function BotScenarios() {
 
   const handleLaunch = async () => {
     if (!currentUser) return;
+    if (!window.confirm('Вы уверены, что хотите запустить бота по этому сценарию?')) return;
     setIsLaunching(true);
     setLaunchError('');
     try {
@@ -230,7 +253,22 @@ export default function BotScenarios() {
 
       setBotActive(true);
       const docRef = doc(db, 'users', currentUser.uid, 'settings', `scenario_${selectedPlatform}`);
-      await setDoc(docRef, { isActive: true, nodes, edges }, { merge: true });
+      
+      // Serialize keyboards
+      const serializedNodes = nodes.map(node => {
+        if (node.data.keyboard && Array.isArray(node.data.keyboard)) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              keyboard: node.data.keyboard.map(row => ({ buttons: Array.isArray(row) ? row : (row.buttons || []) }))
+            }
+          };
+        }
+        return node;
+      });
+
+      await setDoc(docRef, { isActive: true, nodes: serializedNodes, edges }, { merge: true });
       alert('Бот успешно запущен по текущему сценарию!');
     } catch (error: any) {
       console.error("Launch error:", error);
@@ -308,20 +346,20 @@ export default function BotScenarios() {
 
   return (
     <div className={`flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 bg-[#0f0f0f] p-4' : 'h-[calc(100vh-6rem)]'}`}>
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">Сценарии ботов</h1>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <h1 className="text-xl md:text-2xl font-bold text-white">Сценарии ботов</h1>
           <select 
             value={selectedPlatform}
             onChange={(e) => setSelectedPlatform(e.target.value as any)}
-            className="bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-2 text-sm text-white outline-none"
+            className="bg-[#1a1a1a] border border-white/10 rounded-xl px-3 md:px-4 py-2 text-sm text-white outline-none"
           >
             <option value="tg">Telegram</option>
             <option value="vk">ВКонтакте</option>
             <option value="max">MAX</option>
           </select>
 
-          <div className="flex items-center gap-2 ml-4 bg-[#1a1a1a] border border-white/10 rounded-xl px-3 py-1.5">
+          <div className="flex items-center gap-2 bg-[#1a1a1a] border border-white/10 rounded-xl px-3 py-1.5">
             <span className="text-sm text-gray-400">Статус:</span>
             <button 
               onClick={handleToggleActive}
@@ -335,15 +373,15 @@ export default function BotScenarios() {
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {launchError && (
-            <div className="text-red-400 text-xs flex items-center gap-1 mr-2 bg-red-500/10 px-2 py-1 rounded-lg border border-red-500/20">
-              <AlertCircle size={12} /> {launchError}
+            <div className="text-red-400 text-xs flex items-center gap-1 bg-red-500/10 px-2 py-1 rounded-lg border border-red-500/20 w-full md:w-auto mb-2 md:mb-0">
+              <AlertCircle size={12} className="shrink-0" /> <span className="truncate">{launchError}</span>
             </div>
           )}
           <button 
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="bg-[#1a1a1a] hover:bg-[#222] text-white p-2 rounded-xl border border-white/10 transition-colors mr-2"
+            className="bg-[#1a1a1a] hover:bg-[#222] text-white p-2 rounded-xl border border-white/10 transition-colors hidden md:block"
             title={isFullscreen ? "Свернуть" : "На весь экран"}
           >
             {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
@@ -351,14 +389,14 @@ export default function BotScenarios() {
           <button 
             onClick={handleSave}
             disabled={isSaving}
-            className="bg-[#1a1a1a] hover:bg-[#222] text-white px-4 py-2 rounded-xl flex items-center gap-2 border border-white/10 transition-colors disabled:opacity-50"
+            className="flex-1 md:flex-none justify-center bg-[#1a1a1a] hover:bg-[#222] text-white px-4 py-2 rounded-xl flex items-center gap-2 border border-white/10 transition-colors disabled:opacity-50"
           >
             <Save size={16} /> {isSaving ? '...' : 'Сохранить'}
           </button>
           <button 
             onClick={handleLaunch}
             disabled={isLaunching}
-            className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50 font-medium"
+            className="flex-1 md:flex-none justify-center bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50 font-medium"
           >
             <Power size={16} /> {isLaunching ? 'Запуск...' : 'Запустить'}
           </button>
@@ -411,7 +449,7 @@ export default function BotScenarios() {
 
         {/* Sidebar */}
         {selectedNode && (
-          <div className="w-80 bg-[#1a1a1a] rounded-2xl border border-white/10 p-4 flex flex-col overflow-y-auto custom-scrollbar">
+          <div className="w-full md:w-80 absolute md:relative right-0 top-0 h-full z-10 bg-[#1a1a1a] md:rounded-2xl border-l md:border border-white/10 p-4 flex flex-col overflow-y-auto custom-scrollbar shadow-2xl md:shadow-none">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-bold text-white flex items-center gap-2">
                 <Settings size={16} /> Настройки узла

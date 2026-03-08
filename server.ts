@@ -724,20 +724,27 @@ async function startServer() {
       if (payload) {
         // Find trigger node where the link ends with the payload
         // e.g. link = "https://t.me/bot?start=promo", payload = "promo"
-        const triggerNode = nodes.find((n: any) => n.type === 'trigger' && n.data.link && n.data.link.endsWith(payload));
+        const triggerNode = nodes.find((n: any) => n.type === 'trigger' && (n.data.refCode === payload || (n.data.link && n.data.link.endsWith(payload))));
         if (triggerNode) {
           startNodeId = triggerNode.id;
         }
-        // If payload is present, we strictly ignore the main greeting branch
-      } else {
-        // Check for command node
-        const commandNode = nodes.find((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
-        if (commandNode) {
-          startNodeId = commandNode.id;
-        } else if (text === '/start' || text.toLowerCase() === 'начать') {
+      }
+      
+      if (!startNodeId) {
+        if (text === '/start' || text.toLowerCase() === 'начать') {
           const startNode = nodes.find((n: any) => n.type === 'start');
           if (startNode) {
             startNodeId = startNode.id;
+          }
+        }
+        
+        if (!startNodeId) {
+          // Check for command node
+          const commandNodes = nodes.filter((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
+          if (commandNodes.length > 0) {
+            // Try to find one that has an outgoing edge to prioritize connected commands
+            const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
+            startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
           }
         }
       }
