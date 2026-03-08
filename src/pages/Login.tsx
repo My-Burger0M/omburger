@@ -33,7 +33,11 @@ export default function Login() {
       navigate('/');
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(`Ошибка входа: ${err.message || 'Проверьте email и пароль'}`);
+      if (err.code === 'auth/network-request-failed') {
+        setError('Ошибка сети. Пожалуйста, отключите VPN, проверьте подключение к интернету или отключите блокировщик рекламы.');
+      } else {
+        setError(`Ошибка входа: ${err.message || 'Проверьте email и пароль'}`);
+      }
     } finally {
       setLoading(false);
     }

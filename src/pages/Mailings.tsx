@@ -24,6 +24,32 @@ interface FailedMessage {
   createdAt: any;
 }
 
+const sanitizeForFirestore = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    const hasNestedArray = obj.some(item => Array.isArray(item));
+    if (hasNestedArray) {
+      return obj.map((item) => {
+        if (Array.isArray(item)) {
+          return { _isNestedArray: true, items: sanitizeForFirestore(item) };
+        }
+        return sanitizeForFirestore(item);
+      });
+    }
+    return obj.map(item => sanitizeForFirestore(item));
+  } else if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (obj[key] !== undefined) {
+          newObj[key] = sanitizeForFirestore(obj[key]);
+        }
+      }
+    }
+    return newObj;
+  }
+  return obj;
+};
+
 export default function Mailings() {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -126,7 +152,7 @@ export default function Mailings() {
           text: messageText,
           mediaUrl: mediaUrl || null,
           mediaType: mediaUrl ? mediaType : null,
-          keyboard: keyboard.length > 0 ? { inline_keyboard: keyboard } : null,
+          keyboard: keyboard.length > 0 ? sanitizeForFirestore({ inline_keyboard: keyboard }) : null,
           status: 'pending',
           scheduledAt: serverTimestamp(),
           createdAt: serverTimestamp()

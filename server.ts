@@ -627,7 +627,14 @@ async function startServer() {
         
         let mediaType = undefined;
         if (mediaUrl) {
-          mediaType = mediaUrl.match(/\.(mp4|mov)$/i) ? 'video' : 'photo';
+          mediaType = mediaUrl.match(/\.(mp4|mov)$/i) || mediaUrl.includes('video') ? 'video' : 'photo';
+        }
+
+        let normalizedKeyboard = undefined;
+        if (keyboard && keyboard.length > 0) {
+          normalizedKeyboard = {
+            inline_keyboard: keyboard.map((row: any) => row.buttons || row)
+          };
         }
 
         // Send message
@@ -639,7 +646,7 @@ async function startServer() {
             userId,
             mediaUrl,
             mediaType,
-            keyboard: keyboard && keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
+            keyboard: normalizedKeyboard
           });
 
           // Log to chat history
@@ -649,11 +656,11 @@ async function startServer() {
             timestamp: serverTimestamp(),
             mediaUrl: mediaUrl || null,
             mediaType: mediaType || null,
-            keyboard: keyboard && keyboard.length > 0 ? { inline_keyboard: keyboard } : null
+            keyboard: normalizedKeyboard ? sanitizeForFirestore(normalizedKeyboard) : null
           });
 
           await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
-            lastMessage: mediaUrl ? `[Медиа] ${text}` : text,
+            lastMessage: mediaUrl ? `[${mediaType === 'photo' ? 'Фото' : 'Видео'}] ${text}` : text,
             lastMessageAt: serverTimestamp()
           });
         } catch (e) {
@@ -691,6 +698,50 @@ async function startServer() {
     }
   };
 
+  const deserializeFromFirestore = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(item => deserializeFromFirestore(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      if (obj._isNestedArray && Array.isArray(obj.items)) {
+        return deserializeFromFirestore(obj.items);
+      }
+      const newObj: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          newObj[key] = deserializeFromFirestore(obj[key]);
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
+  const sanitizeForFirestore = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      const hasNestedArray = obj.some(item => Array.isArray(item));
+      if (hasNestedArray) {
+        return obj.map((item) => {
+          if (Array.isArray(item)) {
+            return { _isNestedArray: true, items: sanitizeForFirestore(item) };
+          }
+          return sanitizeForFirestore(item);
+        });
+      }
+      return obj.map(item => sanitizeForFirestore(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      const newObj: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          if (obj[key] !== undefined) {
+            newObj[key] = sanitizeForFirestore(obj[key]);
+          }
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
   const processScenario = async (platform: string, chatId: string, text: string, payload: string | null, userId: string) => {
     try {
       const chatDoc = await getDoc(doc(db, 'chats', `${platform}_${chatId}`));
@@ -703,8 +754,8 @@ async function startServer() {
       const scenario = scenarioSnap.data();
       if (!scenario.isActive) return;
 
-      const nodes = scenario.nodes || [];
-      const edges = scenario.edges || [];
+      const nodes = deserializeFromFirestore(scenario.nodes || []);
+      const edges = deserializeFromFirestore(scenario.edges || []);
 
       // Check if waiting for message
       if (chatData.scenarioState?.active && !payload && text !== '/start') {
@@ -742,6 +793,8 @@ async function startServer() {
           // Check for command node
           const commandNodes = nodes.filter((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
           if (commandNodes.length > 0) {
+            // Sort by Y position to prioritize the top-most node on the canvas
+            commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));
             // Try to find one that has an outgoing edge to prioritize connected commands
             const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
             startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
@@ -848,10 +901,40 @@ async function startServer() {
         const extras: any = {};
         if (keyboard) extras.reply_markup = keyboard;
 
-        if (mediaUrl && mediaType === 'photo') {
-            await bot.telegram.sendPhoto(chatId, mediaUrl, { caption: text, ...extras });
-        } else if (mediaUrl && mediaType === 'video') {
-            await bot.telegram.sendVideo(chatId, mediaUrl, { caption: text, ...extras });
+        if (mediaUrl) {
+          // Check for Telegram message links (private or public) to use copyMessage
+          const privateMatch = mediaUrl.match(/t\.me\/c\/(\d+)\/(\d+)/);
+          const publicMatch = mediaUrl.match(/t\.me\/([^/]+)\/(\d+)/);
+          
+          if (privateMatch) {
+            const fromChatId = '-100' + privateMatch[1];
+            const messageId = parseInt(privateMatch[2], 10);
+            await bot.telegram.copyMessage(chatId, fromChatId, messageId, { caption: text, ...extras });
+          } else if (publicMatch && !mediaUrl.includes('t.me/c/')) {
+            const fromChatId = '@' + publicMatch[1];
+            const messageId = parseInt(publicMatch[2], 10);
+            await bot.telegram.copyMessage(chatId, fromChatId, messageId, { caption: text, ...extras });
+          } else {
+            // Handle base64 or regular URL
+            let tgMedia: any = mediaUrl;
+            if (mediaUrl.startsWith('data:')) {
+              const base64Data = mediaUrl.split(',')[1];
+              const isVideo = mediaUrl.includes('video');
+              tgMedia = { 
+                source: Buffer.from(base64Data, 'base64'), 
+                filename: isVideo ? 'video.mp4' : 'image.jpg' 
+              };
+            }
+
+            if (mediaType === 'photo') {
+              await bot.telegram.sendPhoto(chatId, tgMedia, { caption: text, ...extras });
+            } else if (mediaType === 'video') {
+              await bot.telegram.sendVideo(chatId, tgMedia, { caption: text, ...extras });
+            } else {
+              // Fallback
+              await bot.telegram.sendMessage(chatId, text || ' ', extras);
+            }
+          }
         } else {
             await bot.telegram.sendMessage(chatId, text || ' ', extras);
         }
@@ -860,7 +943,11 @@ async function startServer() {
         if (!tokens?.vk) throw new Error('VK token not configured');
         
         let messageText = text || '';
-        if (mediaUrl) messageText += `\n\n${mediaUrl}`;
+        if (mediaUrl && !mediaUrl.startsWith('data:')) {
+          messageText += `\n\n${mediaUrl}`;
+        } else if (mediaUrl && mediaUrl.startsWith('data:')) {
+          messageText += `\n\n[Медиафайл прикреплен]`;
+        }
 
         const params: any = {
             peer_id: Number(chatId),
@@ -947,7 +1034,8 @@ async function startServer() {
           
           for (const docSnap of messagesToSend) {
               const msg = docSnap.data();
-              const { chatId, platform, text, userId, mediaUrl, mediaType, keyboard } = msg;
+              const { chatId, platform, text, userId, mediaUrl, mediaType, keyboard: rawKeyboard } = msg;
+              const keyboard = deserializeFromFirestore(rawKeyboard);
               
               try {
                   await sendMessageInternal({ chatId, platform, text, userId, mediaUrl, mediaType, keyboard });
@@ -962,7 +1050,7 @@ async function startServer() {
                     timestamp: serverTimestamp(),
                     mediaUrl: mediaUrl || null,
                     mediaType: mediaType || null,
-                    keyboard: keyboard || null
+                    keyboard: keyboard ? sanitizeForFirestore(keyboard) : null
                   });
 
                   await updateDoc(doc(db, 'chats', chatDocId), {
@@ -1034,7 +1122,7 @@ async function startServer() {
               timestamp: serverTimestamp(),
               mediaUrl: mediaUrl || null,
               mediaType: mediaType || null,
-              keyboard: keyboard || null
+              keyboard: keyboard ? sanitizeForFirestore(keyboard) : null
             });
 
             await updateDoc(docSnap.ref, {

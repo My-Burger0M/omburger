@@ -67,6 +67,50 @@ interface Note {
   createdAt?: any;
 }
 
+const sanitizeData = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    const hasNestedArray = obj.some(item => Array.isArray(item));
+    if (hasNestedArray) {
+      return obj.map((item) => {
+        if (Array.isArray(item)) {
+          return { _isNestedArray: true, items: sanitizeData(item) };
+        }
+        return sanitizeData(item);
+      });
+    }
+    return obj.map(item => sanitizeData(item));
+  } else if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (obj[key] !== undefined) {
+          newObj[key] = sanitizeData(obj[key]);
+        }
+      }
+    }
+    return newObj;
+  }
+  return obj;
+};
+
+const deserializeFromFirestore = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    return obj.map(item => deserializeFromFirestore(item));
+  } else if (obj !== null && typeof obj === 'object') {
+    if (obj._isNestedArray && Array.isArray(obj.items)) {
+      return deserializeFromFirestore(obj.items);
+    }
+    const newObj: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        newObj[key] = deserializeFromFirestore(obj[key]);
+      }
+    }
+    return newObj;
+  }
+  return obj;
+};
+
 export default function Dialogs() {
   const { currentUser } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
@@ -308,20 +352,6 @@ export default function Dialogs() {
   const handleSaveNote = async () => {
     if (!currentUser || !editingNote?.title) return;
     try {
-      const sanitizeData = (data: any): any => {
-        if (data === undefined) return null;
-        if (data === null) return null;
-        if (Array.isArray(data)) return data.map(sanitizeData);
-        if (typeof data === 'object') {
-          const result: any = {};
-          for (const key in data) {
-            result[key] = sanitizeData(data[key]);
-          }
-          return result;
-        }
-        return data;
-      };
-
       const sanitizedKeyboard = sanitizeData(editingNote.keyboard || []);
 
       const noteData = {
@@ -411,7 +441,7 @@ export default function Dialogs() {
                 text: noteToSchedule.text,
                 mediaUrl: noteToSchedule.mediaUrl,
                 mediaType: noteToSchedule.mediaType,
-                keyboard: noteToSchedule.keyboard ? { inline_keyboard: noteToSchedule.keyboard } : null,
+                keyboard: noteToSchedule.keyboard ? sanitizeData({ inline_keyboard: noteToSchedule.keyboard }) : null,
                 scheduledAt: scheduledTimestamp,
                 status: 'pending',
                 createdAt: serverTimestamp(),
@@ -451,20 +481,6 @@ export default function Dialogs() {
 
               const currentKeyboard = note.keyboard && note.keyboard.length > 0 ? { inline_keyboard: note.keyboard } : null;
               
-              const sanitizeData = (data: any): any => {
-                if (data === undefined) return null;
-                if (data === null) return null;
-                if (Array.isArray(data)) return data.map(sanitizeData);
-                if (typeof data === 'object') {
-                  const result: any = {};
-                  for (const key in data) {
-                    result[key] = sanitizeData(data[key]);
-                  }
-                  return result;
-                }
-                return data;
-              };
-
               const sanitizedKeyboard = sanitizeData(currentKeyboard);
 
               await axios.post('/api/messages/send', {
@@ -474,7 +490,7 @@ export default function Dialogs() {
                 userId: currentUser?.uid,
                 mediaUrl: note.mediaUrl,
                 mediaType: note.mediaType,
-                keyboard: sanitizedKeyboard
+                keyboard: currentKeyboard
               });
 
               // Log to chat history
@@ -548,7 +564,7 @@ export default function Dialogs() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...deserializeFromFirestore(doc.data())
       })) as Message[];
       setMessages(msgs);
       updateDoc(doc(db, 'chats', selectedChatId), { unreadCount: 0 });
@@ -562,7 +578,7 @@ export default function Dialogs() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const notesData = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...deserializeFromFirestore(doc.data())
       })) as Note[];
       setNotes(notesData);
     });
@@ -572,6 +588,44 @@ export default function Dialogs() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // --- Voice Message Deletion ---
+  useEffect(() => {
+    if (!selectedChatId) return;
+    const now = Date.now();
+    const timeouts: NodeJS.Timeout[] = [];
+
+    messages.forEach(msg => {
+      if (msg.mediaType === 'voice' && msg.playedAt) {
+        const playedTime = msg.playedAt.toMillis ? msg.playedAt.toMillis() : msg.playedAt;
+        const timeElapsed = now - playedTime;
+        if (timeElapsed >= 60000) {
+          deleteDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id)).catch(console.error);
+        } else {
+          const timeout = setTimeout(() => {
+            deleteDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id)).catch(console.error);
+          }, 60000 - timeElapsed);
+          timeouts.push(timeout);
+        }
+      }
+    });
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [messages, selectedChatId]);
+
+  const handleVoicePlay = async (msgId: string, playedAt: any) => {
+    if (!playedAt && selectedChatId) {
+      try {
+        await updateDoc(doc(db, 'chats', selectedChatId, 'messages', msgId), {
+          playedAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error('Error updating playedAt:', e);
+      }
+    }
+  };
 
   // --- Sending ---
 
@@ -586,21 +640,6 @@ export default function Dialogs() {
     const currentMediaUrl = mediaUrl;
     const currentMediaType = mediaType;
     const currentKeyboard = keyboardRows.length > 0 ? { inline_keyboard: keyboardRows } : null;
-
-    // Helper to recursively replace undefined with null
-    const sanitizeData = (data: any): any => {
-      if (data === undefined) return null;
-      if (data === null) return null;
-      if (Array.isArray(data)) return data.map(sanitizeData);
-      if (typeof data === 'object') {
-        const result: any = {};
-        for (const key in data) {
-          result[key] = sanitizeData(data[key]);
-        }
-        return result;
-      }
-      return data;
-    };
 
     const sanitizedKeyboard = sanitizeData(currentKeyboard);
 
@@ -618,7 +657,7 @@ export default function Dialogs() {
         userId: currentUser?.uid,
         mediaUrl: currentMediaUrl,
         mediaType: currentMediaType,
-        keyboard: sanitizedKeyboard
+        keyboard: currentKeyboard
       });
 
       await addDoc(collection(db, 'chats', selectedChatId, 'messages'), {
@@ -770,9 +809,17 @@ export default function Dialogs() {
                     <h3 className="font-medium text-gray-200 truncate pr-2 text-sm">
                       {chat.customName || chat.displayName || chat.username}
                     </h3>
-                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                      {chat.lastMessageAt?.toDate ? format(chat.lastMessageAt.toDate(), 'HH:mm') : ''}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={(e) => handleDeleteChat(e, chat.id)}
+                        className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                        {chat.lastMessageAt?.toDate ? format(chat.lastMessageAt.toDate(), 'HH:mm') : ''}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-500 truncate mt-0.5 pr-6">
                     {chat.lastMessage || 'Нет сообщений'}
@@ -801,13 +848,6 @@ export default function Dialogs() {
                   {chat.unreadCount}
                 </div>
               )}
-              
-              <button 
-                onClick={(e) => handleDeleteChat(e, chat.id)}
-                className="absolute right-2 top-2 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-              >
-                <Trash2 size={14} />
-              </button>
             </div>
           ))}
         </div>
@@ -891,8 +931,15 @@ export default function Dialogs() {
                             <Mic size={16} />
                             <span>(Голосовое сообщение)</span>
                           </div>
-                          <audio src={msg.mediaUrl} controls className="h-8 w-full max-w-[200px]" />
-                          <div className="text-[10px] text-red-400">Удалится через 1 мин после получения</div>
+                          <audio 
+                            src={msg.mediaUrl} 
+                            controls 
+                            className="h-8 w-full max-w-[200px]" 
+                            onPlay={() => handleVoicePlay(msg.id, msg.playedAt)}
+                          />
+                          <div className="text-[10px] text-red-400">
+                            {msg.playedAt ? 'Удалится через 1 мин после прослушивания' : 'Удалится через 1 мин после прослушивания'}
+                          </div>
                         </div>
                       ) : msg.mediaType === 'animation' ? (
                         <div className="bg-[#2a2a2a] p-3 flex items-center gap-2 text-gray-400 text-sm">
@@ -902,7 +949,7 @@ export default function Dialogs() {
                           </a>
                         </div>
                       ) : (
-                        <img src={msg.mediaUrl} alt="Attachment" className="w-full h-auto max-h-64 object-contain" />
+                        <img src={msg.mediaUrl} alt="[Фото]" className="w-full h-auto max-h-64 object-contain" />
                       )}
                     </div>
                   )}

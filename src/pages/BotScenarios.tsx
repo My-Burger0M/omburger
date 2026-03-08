@@ -160,6 +160,24 @@ export default function BotScenarios() {
 
   const [selectedPlatform, setSelectedPlatform] = useState<'tg' | 'vk' | 'max'>('tg');
 
+  const deserializeFromFirestore = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(item => deserializeFromFirestore(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      if (obj._isNestedArray && Array.isArray(obj.items)) {
+        return deserializeFromFirestore(obj.items);
+      }
+      const newObj: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          newObj[key] = deserializeFromFirestore(obj[key]);
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
   useEffect(() => {
     const loadScenario = async () => {
       if (!currentUser) return;
@@ -168,20 +186,23 @@ export default function BotScenarios() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const loadedNodes = data.nodes || initialNodes;
+          const loadedNodes = deserializeFromFirestore(data.nodes || initialNodes);
           // Ensure platform is set for trigger nodes and normalize keyboard
           const updatedNodes = loadedNodes.map((n: any) => {
             let kb = n.data.keyboard || [];
-            if (kb.length > 0 && kb[0].buttons) {
-               kb = kb.map((row: any) => row.buttons);
-            }
+            // Robust deserialization: ensure it's an array of arrays for the UI
+            kb = kb.map((row: any) => {
+              if (Array.isArray(row)) return row;
+              if (row && row.buttons && Array.isArray(row.buttons)) return row.buttons;
+              return [];
+            });
             return {
               ...n,
               data: { ...n.data, platform: selectedPlatform, keyboard: kb }
             };
           });
           setNodes(updatedNodes);
-          setEdges(data.edges || initialEdges);
+          setEdges(deserializeFromFirestore(data.edges || initialEdges));
           setBotActive(data.isActive || false);
         } else {
           setNodes(initialNodes);
@@ -195,9 +216,37 @@ export default function BotScenarios() {
     loadScenario();
   }, [currentUser, selectedPlatform, setNodes, setEdges]);
 
+  const sanitizeForFirestore = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      // If it's an array, check if any of its elements are arrays
+      const hasNestedArray = obj.some(item => Array.isArray(item));
+      if (hasNestedArray) {
+        // Convert array of arrays to array of objects
+        return obj.map((item, index) => {
+          if (Array.isArray(item)) {
+            return { _isNestedArray: true, items: sanitizeForFirestore(item) };
+          }
+          return sanitizeForFirestore(item);
+        });
+      }
+      return obj.map(item => sanitizeForFirestore(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      const newObj: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          // Skip undefined values as Firestore doesn't like them
+          if (obj[key] !== undefined) {
+            newObj[key] = sanitizeForFirestore(obj[key]);
+          }
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
   const handleSave = async () => {
     if (!currentUser) return;
-    if (!window.confirm('Вы уверены, что хотите сохранить сценарий?')) return;
     setIsSaving(true);
     try {
       const docRef = doc(db, 'users', currentUser.uid, 'settings', `scenario_${selectedPlatform}`);
@@ -216,15 +265,18 @@ export default function BotScenarios() {
         return node;
       });
 
+      const sanitizedNodes = sanitizeForFirestore(serializedNodes);
+      const sanitizedEdges = sanitizeForFirestore(edges);
+
       await setDoc(docRef, {
-        nodes: serializedNodes,
-        edges,
+        nodes: sanitizedNodes,
+        edges: sanitizedEdges,
         isActive: botActive
       }, { merge: true });
       alert('Сценарий успешно сохранен!');
     } catch (error) {
       console.error("Error saving scenario:", error);
-      alert('Ошибка при сохранении');
+      alert('Ошибка при сохранении. Проверьте консоль для деталей.');
     } finally {
       setIsSaving(false);
     }
@@ -268,7 +320,10 @@ export default function BotScenarios() {
         return node;
       });
 
-      await setDoc(docRef, { isActive: true, nodes: serializedNodes, edges }, { merge: true });
+      const sanitizedNodes = sanitizeForFirestore(serializedNodes);
+      const sanitizedEdges = sanitizeForFirestore(edges);
+
+      await setDoc(docRef, { isActive: true, nodes: sanitizedNodes, edges: sanitizedEdges }, { merge: true });
       alert('Бот успешно запущен по текущему сценарию!');
     } catch (error: any) {
       console.error("Launch error:", error);
