@@ -82,43 +82,6 @@ const MessageNode = ({ data }: { data: any }) => (
   </div>
 );
 
-const ActionNode = ({ data }: { data: any }) => (
-  <div className="bg-[#1a1a1a] border border-green-500/50 rounded-xl w-48 shadow-lg shadow-green-900/20">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-green-500" />
-    <div className="bg-green-500/10 p-2 rounded-t-xl border-b border-green-500/20 flex items-center gap-2">
-      <Tag size={14} className="text-green-400" />
-      <span className="text-xs font-bold text-green-100">{data.label || 'Действия'}</span>
-    </div>
-    <div className="p-3 text-xs text-gray-400 flex flex-col gap-1">
-      {data.actions && data.actions.length > 0 ? (
-        data.actions.map((act: any, i: number) => (
-          <div key={i} className="truncate">
-            {act.type === 'add_tag' ? '+ Тег: ' : '- Тег: '} <span className="text-white">{act.tag || '...'}</span>
-          </div>
-        ))
-      ) : (
-        <div className="truncate text-gray-600">Нет действий</div>
-      )}
-    </div>
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-green-500" />
-  </div>
-);
-
-const ConditionNode = ({ data }: { data: any }) => (
-  <div className="bg-[#1a1a1a] border border-yellow-500/50 rounded-xl w-48 shadow-lg shadow-yellow-900/20">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-yellow-500" />
-    <div className="bg-yellow-500/10 p-2 rounded-t-xl border-b border-yellow-500/20 flex items-center gap-2">
-      <Zap size={14} className="text-yellow-400" />
-      <span className="text-xs font-bold text-yellow-100">{data.label || 'Условие'}</span>
-    </div>
-    <div className="p-3 text-xs text-gray-400 truncate text-center">
-      Если тег: <span className="text-white">{data.tag || '...'}</span>
-    </div>
-    <Handle type="source" position={Position.Bottom} id="true" className="w-3 h-3 bg-green-500 -ml-4" title="Да" />
-    <Handle type="source" position={Position.Bottom} id="false" className="w-3 h-3 bg-red-500 ml-4" title="Нет" />
-  </div>
-);
-
 const TriggerNode = ({ data }: { data: any }) => (
   <div className="bg-[#1a1a1a] border border-purple-500/50 rounded-xl w-64 shadow-lg shadow-purple-900/20">
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-purple-500" />
@@ -167,8 +130,6 @@ const CommandNode = ({ data }: { data: any }) => (
 const nodeTypes = {
   start: StartNode,
   message: MessageNode,
-  action: ActionNode,
-  condition: ConditionNode,
   trigger: TriggerNode,
   command: CommandNode,
 };
@@ -288,27 +249,22 @@ export default function BotScenarios() {
     await setDoc(docRef, { isActive: newState }, { merge: true });
   };
 
-  const handleTest = () => {
-    alert('Режим тестирования: Откройте вашего бота в ' + (selectedPlatform === 'tg' ? 'Telegram' : 'ВКонтакте') + ' и отправьте /start. Бот будет отвечать по текущему (несохраненному) сценарию только вам.');
-  };
-
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges],
   );
 
-  const addNode = (type: 'message' | 'action' | 'condition' | 'trigger' | 'command') => {
+  const addNode = (type: 'message' | 'trigger' | 'command') => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: type,
       data: { 
-        label: type === 'message' ? 'Сообщение' : type === 'action' ? 'Действия' : type === 'trigger' ? 'Вход по ссылке' : type === 'command' ? 'Команда' : 'Условие',
+        label: type === 'message' ? 'Сообщение' : type === 'trigger' ? 'Вход по ссылке' : 'Команда',
         type,
         text: '',
         mediaUrl: '',
         delay: 0,
         timeout: 0,
-        actions: type === 'action' ? [{ type: 'add_tag', tag: '' }] : [],
         tag: '',
         tagColor: type === 'trigger' ? '#3b82f6' : '',
         link: type === 'trigger' ? '' : '',
@@ -393,12 +349,6 @@ export default function BotScenarios() {
             {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
           </button>
           <button 
-            onClick={handleTest}
-            className="bg-[#1a1a1a] hover:bg-[#222] text-white px-4 py-2 rounded-xl flex items-center gap-2 border border-white/10 transition-colors"
-          >
-            <MessageSquare size={16} /> Тест
-          </button>
-          <button 
             onClick={handleSave}
             disabled={isSaving}
             className="bg-[#1a1a1a] hover:bg-[#222] text-white px-4 py-2 rounded-xl flex items-center gap-2 border border-white/10 transition-colors disabled:opacity-50"
@@ -454,12 +404,6 @@ export default function BotScenarios() {
               <div className="w-px h-6 bg-white/10 self-center mx-1"></div>
               <button onClick={() => addNode('message')} className="p-2 hover:bg-[#333] rounded-lg text-blue-400 flex items-center gap-2 text-sm" title="Добавить сообщение">
                 <MessageSquare size={16} /> Сообщение
-              </button>
-              <button onClick={() => addNode('action')} className="p-2 hover:bg-[#333] rounded-lg text-green-400 flex items-center gap-2 text-sm" title="Добавить действия (теги)">
-                <Tag size={16} /> Действия
-              </button>
-              <button onClick={() => addNode('condition')} className="p-2 hover:bg-[#333] rounded-lg text-yellow-400 flex items-center gap-2 text-sm" title="Добавить условие">
-                <Zap size={16} /> Условие
               </button>
             </Panel>
           </ReactFlow>
@@ -725,81 +669,6 @@ export default function BotScenarios() {
                 </div>
               )}
 
-              {selectedNode.data.type === 'action' && (
-                <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-xs text-gray-400">Список действий</label>
-                    <button 
-                      onClick={() => {
-                        const actions = selectedNode.data.actions || [];
-                        if (actions.length >= 6) return alert('Максимум 6 действий в одном узле');
-                        updateNodeData('actions', [...actions, { type: 'add_tag', tag: '' }]);
-                      }}
-                      className="text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white"
-                    >
-                      + Добавить
-                    </button>
-                  </div>
-                  
-                  {(selectedNode.data.actions || []).map((act: any, idx: number) => (
-                    <div key={idx} className="bg-[#222] p-2 rounded-lg border border-white/5 relative group">
-                      <button 
-                        onClick={() => {
-                          const actions = [...selectedNode.data.actions];
-                          actions.splice(idx, 1);
-                          updateNodeData('actions', actions);
-                        }}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                      <select 
-                        value={act.type}
-                        onChange={(e) => {
-                          const actions = [...selectedNode.data.actions];
-                          actions[idx].type = e.target.value;
-                          updateNodeData('actions', actions);
-                        }}
-                        className="w-full bg-[#111] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none mb-2"
-                      >
-                        <option value="add_tag">Добавить тег</option>
-                        <option value="remove_tag">Удалить тег</option>
-                      </select>
-                      <input 
-                        type="text" 
-                        value={act.tag}
-                        onChange={(e) => {
-                          const actions = [...selectedNode.data.actions];
-                          actions[idx].tag = e.target.value;
-                          updateNodeData('actions', actions);
-                        }}
-                        placeholder="Название тега"
-                        className="w-full bg-[#111] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-purple-500"
-                      />
-                    </div>
-                  ))}
-                  {(!selectedNode.data.actions || selectedNode.data.actions.length === 0) && (
-                    <div className="text-xs text-gray-500 text-center py-2">Нет действий</div>
-                  )}
-                </div>
-              )}
-
-              {selectedNode.data.type === 'condition' && (
-                <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Проверка тега</label>
-                    <input 
-                      type="text" 
-                      value={selectedNode.data.tag as string || ''}
-                      onChange={(e) => updateNodeData('tag', e.target.value)}
-                      placeholder="Например: has_paid"
-                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
-                    />
-                    <p className="text-[10px] text-gray-500 mt-1">Если тег есть — идет по зеленой ветке, если нет — по красной.</p>
-                  </div>
-                </div>
-              )}
-
               {selectedNode.data.type === 'trigger' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
@@ -842,6 +711,15 @@ export default function BotScenarios() {
                   </div>
                 </div>
               )}
+              
+              <div className="mt-6 pt-4 border-t border-white/10">
+                <button 
+                  onClick={() => setSelectedNode(null)}
+                  className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded-xl transition-colors text-sm"
+                >
+                  Сохранить настройки
+                </button>
+              </div>
             </div>
           </div>
         )}

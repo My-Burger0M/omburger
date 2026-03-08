@@ -677,24 +677,6 @@ async function startServer() {
           });
           break; // Stop execution, wait for user or cron
         }
-      } else if (node.type === 'action') {
-        const actions = node.data.actions || [];
-        for (const act of actions) {
-          if (act.type === 'add_tag' && act.tag) {
-            await addTag(platform, chatId, act.tag);
-          } else if (act.type === 'remove_tag' && act.tag) {
-            await removeTag(platform, chatId, act.tag);
-          }
-        }
-      } else if (node.type === 'condition') {
-        const tagToCheck = node.data.tag;
-        const chatDoc = await getDoc(doc(db, 'chats', `${platform}_${chatId}`));
-        const chatData = chatDoc.data() || {};
-        const hasTag = chatData.tags && chatData.tags.includes(tagToCheck);
-        
-        const edge = edges.find(e => e.source === currentNodeId && e.sourceHandle === (hasTag ? 'true' : 'false'));
-        currentNodeId = edge ? edge.target : null;
-        continue;
       } else if (node.type === 'trigger') {
         if (node.data.tag) {
           await addTag(platform, chatId, node.data.tag, node.data.tagColor);
@@ -746,20 +728,17 @@ async function startServer() {
         if (triggerNode) {
           startNodeId = triggerNode.id;
         }
-      }
-
-      if (!startNodeId) {
+        // If payload is present, we strictly ignore the main greeting branch
+      } else {
         // Check for command node
         const commandNode = nodes.find((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
         if (commandNode) {
           startNodeId = commandNode.id;
-        }
-      }
-
-      if (!startNodeId && (text === '/start' || text.toLowerCase() === 'начать')) {
-        const startNode = nodes.find((n: any) => n.type === 'start');
-        if (startNode) {
-          startNodeId = startNode.id;
+        } else if (text === '/start' || text.toLowerCase() === 'начать') {
+          const startNode = nodes.find((n: any) => n.type === 'start');
+          if (startNode) {
+            startNodeId = startNode.id;
+          }
         }
       }
 

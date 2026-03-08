@@ -1,9 +1,199 @@
+import { useState, useEffect } from 'react';
+import { db } from '../firebase';
+import { collection, getDocs, doc, updateDoc, deleteField } from 'firebase/firestore';
+import { User, Tag, Trash2, Search, Filter } from 'lucide-react';
+
 export default function CRM() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'chats'));
+        const usersList = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setUsers(usersList);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  const handleDeleteTags = async () => {
+    if (!selectedUser) return;
+    if (!confirm('Вы уверены, что хотите удалить ВСЕ теги у этого пользователя?')) return;
+
+    try {
+      const userRef = doc(db, 'chats', selectedUser.id);
+      await updateDoc(userRef, {
+        tags: deleteField(),
+        tagColors: deleteField()
+      });
+      
+      // Update local state
+      const updatedUser = { ...selectedUser };
+      delete updatedUser.tags;
+      delete updatedUser.tagColors;
+      setSelectedUser(updatedUser);
+      
+      setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+      
+      alert('Теги успешно удалены');
+    } catch (error) {
+      console.error("Error deleting tags:", error);
+      alert('Ошибка при удалении тегов');
+    }
+  };
+
+  const filteredUsers = users.filter(user => {
+    const searchLower = searchTerm.toLowerCase();
+    const name = user.username || user.firstName || user.lastName || user.id;
+    return name.toLowerCase().includes(searchLower);
+  });
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold mb-8">CRM Пользователи</h1>
-      <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-8 text-gray-400">
-        Раздел в разработке
+    <div className="h-[calc(100vh-6rem)] flex gap-6">
+      {/* Users List */}
+      <div className="w-1/3 bg-[#1a1a1a] rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+        <div className="p-4 border-b border-white/10 space-y-4">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <User className="text-purple-500" /> Пользователи
+            <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-gray-400">{users.length}</span>
+          </h2>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+            <input 
+              type="text" 
+              placeholder="Поиск..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+          {loading ? (
+            <div className="text-center text-gray-500 py-8">Загрузка...</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">Пользователи не найдены</div>
+          ) : (
+            filteredUsers.map(user => (
+              <div 
+                key={user.id}
+                onClick={() => setSelectedUser(user)}
+                className={`p-3 rounded-xl cursor-pointer transition-colors flex items-center gap-3 ${selectedUser?.id === user.id ? 'bg-purple-500/20 border border-purple-500/50' : 'bg-[#222] border border-white/5 hover:bg-[#2a2a2a]'}`}
+              >
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                  {(user.username?.[0] || user.firstName?.[0] || '?').toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-white truncate">
+                    {user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''} ${user.username ? `(${user.username})` : ''}` : user.id}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate flex items-center gap-2">
+                    <span>{user.platform === 'tg' ? 'Telegram' : user.platform === 'vk' ? 'VK' : 'Unknown'}</span>
+                    {user.tags && user.tags.length > 0 && (
+                      <span className="bg-white/10 px-1.5 rounded text-[10px] text-gray-300">
+                        {user.tags.length} тегов
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* User Profile */}
+      <div className="flex-1 bg-[#1a1a1a] rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+        {selectedUser ? (
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+            <div className="flex items-start justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-purple-900/20">
+                  {(selectedUser.username?.[0] || selectedUser.firstName?.[0] || '?').toUpperCase()}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {selectedUser.username || selectedUser.firstName ? `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}` : 'Без имени'}
+                  </h2>
+                  <div className="text-gray-400 text-sm mt-1">{selectedUser.username || selectedUser.id}</div>
+                  <div className="flex gap-2 mt-2">
+                    <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      {selectedUser.platform === 'tg' ? 'Telegram' : 'VK'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-gray-400 border border-white/10">
+                      ID: {selectedUser.id}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 mb-8">
+              <div className="bg-[#222] p-4 rounded-xl border border-white/5">
+                <h3 className="text-sm font-medium text-gray-400 mb-4">Теги и Сегменты</h3>
+                
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {selectedUser.tags && selectedUser.tags.length > 0 ? (
+                    selectedUser.tags.map((tag: string, i: number) => (
+                      <span key={i} className="px-3 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm flex items-center gap-2">
+                        <Tag size={12} /> {tag}
+                      </span>
+                    ))
+                  ) : (
+                    <div className="text-gray-500 text-sm italic">Нет тегов</div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={handleDeleteTags}
+                  className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  <Trash2 size={16} /> Удалить все теги
+                </button>
+              </div>
+
+              <div className="bg-[#222] p-4 rounded-xl border border-white/5">
+                <h3 className="text-sm font-medium text-gray-400 mb-4">Информация</h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Первое касание:</span>
+                    <span className="text-white">
+                      {selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Последняя активность:</span>
+                    <span className="text-white">
+                      {selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000).toLocaleDateString() : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Сообщений:</span>
+                    <span className="text-white">{selectedUser.messageCount || 0}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-500 flex-col gap-4">
+            <User size={48} className="opacity-20" />
+            <p>Выберите пользователя для просмотра профиля</p>
+          </div>
+        )}
       </div>
     </div>
   );
