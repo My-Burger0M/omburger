@@ -371,7 +371,7 @@ async function startServer() {
               // Add delay to allow previous instance to die
               setTimeout(() => {
                   if (!tgBot) return;
-                  tgBot.launch().then(() => {
+                  tgBot.launch({ dropPendingUpdates: true }).then(() => {
                     console.log('Telegram Bot started successfully');
                     lastTgError = null;
                   }).catch((err) => {
@@ -527,7 +527,7 @@ async function startServer() {
           });
 
           if (!process.env.VERCEL) {
-            tgBot.launch().then(() => console.log('TG Bot started (Env Var)')).catch(e => {
+            tgBot.launch({ dropPendingUpdates: true }).then(() => console.log('TG Bot started (Env Var)')).catch(e => {
               console.error('TG Start Error (Env Var):', e);
               lastTgError = e.message;
             });
@@ -1292,7 +1292,7 @@ async function startServer() {
             await saveMessage('tg', chatId, text, username);
           });
 
-          tgBot.launch().then(() => {
+          tgBot.launch({ dropPendingUpdates: true }).then(() => {
             console.log('Telegram Bot started successfully with new token');
             lastTgError = null;
           }).catch((err) => {
