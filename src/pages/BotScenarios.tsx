@@ -12,13 +12,69 @@ import {
   Connection,
   Panel,
   Handle,
-  Position
+  Position,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
+  useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Save, Play, Plus, Trash2, Settings, MessageSquare, Tag, Zap, Link as LinkIcon, Image as ImageIcon, Clock, Power, AlertCircle, Maximize, Minimize } from 'lucide-react';
+import { Save, Play, Plus, Trash2, Settings, MessageSquare, Tag, Zap, Link as LinkIcon, Image as ImageIcon, Clock, Power, AlertCircle, Maximize, Minimize, CheckCircle2 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+
+// Custom Edge
+const CustomEdge = ({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  markerEnd,
+  selected,
+}: any) => {
+  const { setEdges } = useReactFlow();
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {selected && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              pointerEvents: 'all',
+            }}
+            className="nodrag nopan"
+          >
+            <button
+              className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors shadow-lg"
+              onClick={(event) => {
+                event.stopPropagation();
+                setEdges((edges) => edges.filter((e) => e.id !== id));
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+};
 
 // Custom Nodes
 const StartNode = ({ data }: { data: any }) => (
@@ -134,6 +190,10 @@ const nodeTypes = {
   command: CommandNode,
 };
 
+const edgeTypes = {
+  custom: CustomEdge,
+};
+
 const initialNodes: Node[] = [
   {
     id: 'start',
@@ -157,6 +217,12 @@ export default function BotScenarios() {
   const [botActive, setBotActive] = useState(false);
   const [launchError, setLaunchError] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{title: string, message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ title, message, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const [selectedPlatform, setSelectedPlatform] = useState<'tg' | 'vk' | 'max'>('tg');
 
@@ -273,10 +339,10 @@ export default function BotScenarios() {
         edges: sanitizedEdges,
         isActive: botActive
       }, { merge: true });
-      alert('Сценарий успешно сохранен!');
+      showToast('Успех', 'Сценарий успешно сохранен!');
     } catch (error) {
       console.error("Error saving scenario:", error);
-      alert('Ошибка при сохранении. Проверьте консоль для деталей.');
+      showToast('Ошибка', 'Ошибка при сохранении. Проверьте консоль для деталей.', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -324,10 +390,11 @@ export default function BotScenarios() {
       const sanitizedEdges = sanitizeForFirestore(edges);
 
       await setDoc(docRef, { isActive: true, nodes: sanitizedNodes, edges: sanitizedEdges }, { merge: true });
-      alert('Бот успешно запущен по текущему сценарию!');
+      showToast('Успех', 'Бот успешно запущен по текущему сценарию!');
     } catch (error: any) {
       console.error("Launch error:", error);
       setLaunchError(error.message || 'Не удалось запустить бота. Проверьте токены в настройках.');
+      showToast('Ошибка', error.message || 'Не удалось запустить бота.', 'error');
       setBotActive(false);
     } finally {
       setIsLaunching(false);
@@ -343,7 +410,7 @@ export default function BotScenarios() {
   };
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Connection) => setEdges((eds) => addEdge({ ...params, type: 'custom' }, eds)),
     [setEdges],
   );
 
@@ -469,6 +536,8 @@ export default function BotScenarios() {
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={{ type: 'custom' }}
             fitView
             theme="dark"
           >
@@ -817,6 +886,21 @@ export default function BotScenarios() {
           </div>
         )}
       </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 animate-fade-in-up">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border ${
+            toastMessage.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/50 text-emerald-100' : 'bg-red-900/90 border-red-500/50 text-red-100'
+          }`}>
+            {toastMessage.type === 'success' ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}
+            <div>
+              <h4 className="font-bold text-sm">{toastMessage.title}</h4>
+              <p className="text-xs opacity-90">{toastMessage.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth } from './server-firebase';
 import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel } from 'firebase/firestore';
@@ -1461,9 +1462,11 @@ async function startServer() {
     }
   } else if (process.env.NODE_ENV === 'production') {
     // In production, serve static files from dist
-    app.use(express.static('dist'));
+    const distPath = path.join(process.cwd(), 'dist');
+    console.log('Serving static files from:', distPath);
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile('dist/index.html', { root: '.' });
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 

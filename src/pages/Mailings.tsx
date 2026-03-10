@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
-import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle } from 'lucide-react';
+import { collection, getDocs, addDoc, serverTimestamp, query, where, writeBatch, doc } from 'firebase/firestore';
+import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ChatUser {
@@ -75,10 +75,52 @@ export default function Mailings() {
   const [failedMessages, setFailedMessages] = useState<FailedMessage[]>([]);
   const [showFailedModal, setShowFailedModal] = useState(false);
 
+  // Notes state
+  const [notes, setNotes] = useState<any[]>([]);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+
+  const [toastMessage, setToastMessage] = useState<{title: string, message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ title, message, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchFailedMessages();
-  }, []);
+    if (currentUser) {
+      fetchNotes();
+    }
+  }, [currentUser]);
+
+  const fetchNotes = async () => {
+    if (!currentUser) return;
+    try {
+      const q = query(collection(db, 'users', currentUser.uid, 'notes'));
+      const snapshot = await getDocs(q);
+      const fetchedNotes: any[] = [];
+      snapshot.forEach(doc => {
+        fetchedNotes.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort in memory since we might not have an index
+      setNotes(fetchedNotes.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+    }
+  };
+
+  const loadNote = (note: any) => {
+    setMessageText(note.text || '');
+    setMediaUrl(note.mediaUrl || '');
+    setMediaType(note.mediaType || 'photo');
+    if (note.keyboard && Array.isArray(note.keyboard)) {
+      setKeyboard(note.keyboard);
+    } else {
+      setKeyboard([]);
+    }
+    setShowNotesModal(false);
+  };
 
   const fetchUsers = async () => {
     try {
@@ -114,6 +156,22 @@ export default function Mailings() {
       setFailedMessages(failed.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
     } catch (error) {
       console.error('Error fetching failed messages:', error);
+    }
+  };
+
+  const clearFailedMessages = async () => {
+    if (!window.confirm('Вы уверены, что хотите очистить все ошибки?')) return;
+    try {
+      const batch = writeBatch(db);
+      failedMessages.forEach(msg => {
+        batch.delete(doc(db, 'scheduled_messages', msg.id));
+      });
+      await batch.commit();
+      setFailedMessages([]);
+      showToast('Успех', 'Ошибки очищены');
+    } catch (error) {
+      console.error('Error clearing failed messages:', error);
+      showToast('Ошибка', 'Ошибка при очистке', 'error');
     }
   };
 
@@ -159,13 +217,13 @@ export default function Mailings() {
         });
         sentCount++;
       }
-      alert(`Рассылка успешно запланирована для ${sentCount} пользователей.`);
+      showToast('Успех', `Рассылка успешно запланирована для ${sentCount} пользователей.`);
       setMessageText('');
       setMediaUrl('');
       setKeyboard([]);
     } catch (error) {
       console.error('Error sending broadcast:', error);
-      alert('Ошибка при отправке рассылки');
+      showToast('Ошибка', 'Ошибка при отправке рассылки', 'error');
     } finally {
       setIsSending(false);
     }
@@ -356,7 +414,16 @@ export default function Mailings() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Текст сообщения</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm text-gray-400">Текст сообщения</label>
+                  <button 
+                    onClick={() => setShowNotesModal(true)}
+                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1"
+                  >
+                    <MessageSquare size={14} />
+                    Загрузить из заметок
+                  </button>
+                </div>
                 <textarea
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
@@ -468,9 +535,19 @@ export default function Mailings() {
                 <AlertCircle className="text-red-500" />
                 Ошибки рассылок
               </h2>
-              <button onClick={() => setShowFailedModal(false)} className="text-gray-400 hover:text-white">
-                <X size={24} />
-              </button>
+              <div className="flex items-center gap-4">
+                {failedMessages.length > 0 && (
+                  <button 
+                    onClick={clearFailedMessages}
+                    className="text-sm text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    Очистить все
+                  </button>
+                )}
+                <button onClick={() => setShowFailedModal(false)} className="text-gray-400 hover:text-white">
+                  <X size={24} />
+                </button>
+              </div>
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
               {failedMessages.length === 0 ? (
@@ -499,6 +576,66 @@ export default function Mailings() {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Notes Modal */}
+      {showNotesModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <MessageSquare className="text-purple-500" />
+                Загрузить из заметок
+              </h2>
+              <button onClick={() => setShowNotesModal(false)} className="text-gray-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+              {notes.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">У вас пока нет заметок</div>
+              ) : (
+                notes.map(note => (
+                  <div key={note.id} className="bg-[#222] border border-white/5 rounded-xl p-4 hover:border-purple-500/50 transition-colors cursor-pointer" onClick={() => loadNote(note)}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="font-medium text-white line-clamp-1 flex-1">
+                        {note.text || '[Медиа сообщение]'}
+                      </div>
+                      <div className="text-xs text-gray-500 ml-4 whitespace-nowrap">
+                        {note.createdAt?.toDate().toLocaleString('ru-RU')}
+                      </div>
+                    </div>
+                    {note.mediaUrl && (
+                      <div className="text-xs text-purple-400 flex items-center gap-1 mt-2">
+                        {note.mediaType === 'video' ? <Video size={12} /> : <ImageIcon size={12} />}
+                        Вложение
+                      </div>
+                    )}
+                    {note.keyboard && note.keyboard.length > 0 && (
+                      <div className="text-xs text-blue-400 mt-1">
+                        + Инлайн-кнопки ({note.keyboard.length} ряд.)
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 animate-fade-in-up">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border ${
+            toastMessage.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/50 text-emerald-100' : 'bg-red-900/90 border-red-500/50 text-red-100'
+          }`}>
+            {toastMessage.type === 'success' ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}
+            <div>
+              <h4 className="font-bold text-sm">{toastMessage.title}</h4>
+              <p className="text-xs opacity-90">{toastMessage.message}</p>
             </div>
           </div>
         </div>
