@@ -5,7 +5,8 @@ import {
   MoreHorizontal, Check, CheckCheck, PlayCircle, StickyNote, Edit2, Save, FileText, Upload, Clock, Calendar
 } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, setDoc, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
@@ -308,42 +309,42 @@ export default function Dialogs() {
     setUploading(true);
     setUploadProgress(0);
 
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          return 90;
-        }
-        return prev + 10;
-      });
-    }, 200);
-
     try {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-            const result = e.target.result as string;
-            const type = file.type.startsWith('video') ? 'video' : 'photo';
-            
-            if (isNote && editingNote) {
-                setEditingNote({ ...editingNote, mediaUrl: result, mediaType: type });
-            } else {
-                setMediaUrl(result);
-                setMediaType(type);
-            }
-            
-            setUploadProgress(100);
-            setTimeout(() => setUploading(false), 500);
+      const type = file.type.startsWith('video') ? 'video' : 'photo';
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+      const storageRef = ref(storage, `uploads/${currentUser?.uid || 'admin'}/${fileName}`);
+      
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(Math.round(progress));
+        }, 
+        (error) => {
+          console.error('Upload failed:', error);
+          setUploading(false);
+          alert('Ошибка загрузки файла');
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          
+          if (isNote && editingNote) {
+              setEditingNote({ ...editingNote, mediaUrl: downloadURL, mediaType: type });
+          } else {
+              setMediaUrl(downloadURL);
+              setMediaType(type);
+          }
+          
+          setUploading(false);
         }
-      };
-      reader.readAsDataURL(file);
+      );
       
     } catch (error) {
       console.error('Upload failed:', error);
       setUploading(false);
       alert('Ошибка загрузки файла');
-    } finally {
-        clearInterval(interval);
     }
   };
 

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, serverTimestamp, query, where, writeBatch, doc } from 'firebase/firestore';
-import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ChatUser {
@@ -70,6 +72,8 @@ export default function Mailings() {
   const [btnColor, setBtnColor] = useState('secondary');
 
   const [isSending, setIsSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   
   // Failed messages state
   const [failedMessages, setFailedMessages] = useState<FailedMessage[]>([]);
@@ -93,6 +97,46 @@ export default function Mailings() {
       fetchNotes();
     }
   }, [currentUser]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const type = file.type.startsWith('video') ? 'video' : 'photo';
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+      const storageRef = ref(storage, `uploads/${currentUser?.uid || 'admin'}/${fileName}`);
+      
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(Math.round(progress));
+        }, 
+        (error) => {
+          console.error('Upload failed:', error);
+          setUploading(false);
+          showToast('Ошибка', 'Ошибка загрузки файла', 'error');
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          setMediaUrl(downloadURL);
+          setMediaType(type);
+          setUploading(false);
+        }
+      );
+      
+    } catch (error) {
+      console.error('Upload failed:', error);
+      setUploading(false);
+      showToast('Ошибка', 'Ошибка загрузки файла', 'error');
+    }
+  };
 
   const fetchNotes = async () => {
     if (!currentUser) return;
@@ -404,13 +448,32 @@ export default function Mailings() {
                     <Video size={14} /> Видео
                   </button>
                 </div>
-                <input
-                  type="text"
-                  value={mediaUrl}
-                  onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder="https://t.me/c/..."
-                  className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 text-sm"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={mediaUrl}
+                    onChange={(e) => setMediaUrl(e.target.value)}
+                    placeholder="https://t.me/c/..."
+                    className="flex-1 bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 text-sm"
+                  />
+                  <label className="bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-gray-400 hover:text-white hover:bg-[#333] transition-colors cursor-pointer flex items-center justify-center relative overflow-hidden">
+                    {uploading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-xs">{uploadProgress}%</span>
+                      </div>
+                    ) : (
+                      <Upload size={18} />
+                    )}
+                    <input 
+                      type="file" 
+                      accept="image/*,video/*" 
+                      onChange={handleFileUpload} 
+                      className="hidden" 
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
               </div>
 
               <div>

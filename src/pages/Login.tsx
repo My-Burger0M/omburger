@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 
 export default function Login() {
@@ -11,14 +12,35 @@ export default function Login() {
   const [logo, setLogo] = useState<string | null>(localStorage.getItem('admin_logo'));
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const fetchLogo = async () => {
+      try {
+        const docRef = doc(db, 'public', 'settings');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists() && docSnap.data().logo) {
+          setLogo(docSnap.data().logo);
+          localStorage.setItem('admin_logo', docSnap.data().logo);
+        }
+      } catch (error) {
+        console.error('Error fetching logo:', error);
+      }
+    };
+    fetchLogo();
+  }, []);
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64 = reader.result as string;
         setLogo(base64);
         localStorage.setItem('admin_logo', base64);
+        try {
+          await setDoc(doc(db, 'public', 'settings'), { logo: base64 }, { merge: true });
+        } catch (error) {
+          console.error('Error saving logo to DB:', error);
+        }
       };
       reader.readAsDataURL(file);
     }
