@@ -21,7 +21,6 @@ const botsItems: MenuItem[] = [
 
 const automationItems: MenuItem[] = [
   { id: 'calendar', path: '/calendar', label: 'Календарь событий' },
-  { id: 'teams', path: '/teams', label: 'Команды' },
   { id: 'knowledge-base', path: '/knowledge-base', label: 'База знаний' },
 ];
 

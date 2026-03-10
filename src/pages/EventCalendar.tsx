@@ -15,7 +15,7 @@ import {
 import { ru } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus, X, Bell, Clock, AlignLeft, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, where, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, where, serverTimestamp, orderBy, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { DateTime } from 'luxon';
@@ -24,10 +24,13 @@ interface CalendarEvent {
   id: string;
   title: string;
   description: string;
-  date: string; // ISO string YYYY-MM-DD
+  date?: string; // Legacy
+  startDate: string; // ISO string YYYY-MM-DD
+  endDate: string; // ISO string YYYY-MM-DD
   timeMsk: string; // HH:mm
   notifyBot: boolean;
   targetChatId?: string;
+  assignees?: string[];
 }
 
 interface ChatOption {
@@ -43,13 +46,18 @@ export default function EventCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [timeMsk, setTimeMsk] = useState('12:00');
   const [notifyBot, setNotifyBot] = useState(false);
   const [targetChatId, setTargetChatId] = useState('');
+  const [assignees, setAssignees] = useState<string[]>([]);
+  const [newAssignee, setNewAssignee] = useState('');
   
   // Data for dropdown
   const [chatOptions, setChatOptions] = useState<ChatOption[]>([]);
@@ -94,38 +102,42 @@ export default function EventCalendar() {
   };
 
   const handleAddEvent = async () => {
-    if (!selectedDate || !title.trim() || !currentUser) return;
+    if (!startDate || !title.trim() || !currentUser) return;
     
     try {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      
-      // Save event to Firestore
       const eventData = {
         title,
         description,
-        date: dateStr,
+        startDate,
+        endDate: endDate || startDate,
         timeMsk,
         notifyBot,
         targetChatId: notifyBot ? targetChatId : null,
-        createdAt: serverTimestamp()
+        assignees,
+        updatedAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'users', currentUser.uid, 'events'), eventData);
+      if (editingEventId) {
+        await updateDoc(doc(db, 'users', currentUser.uid, 'events', editingEventId), eventData);
+      } else {
+        await addDoc(collection(db, 'users', currentUser.uid, 'events'), {
+          ...eventData,
+          createdAt: serverTimestamp()
+        });
+      }
 
       // Schedule notification if requested
-      if (notifyBot && targetChatId) {
+      if (notifyBot && targetChatId && !editingEventId) {
         const chat = chatOptions.find(c => c.id === targetChatId);
         if (chat) {
-          // Parse date and time (Msk) to timestamp
-          // Combine dateStr (YYYY-MM-DD) and timeMsk (HH:mm)
-          const dateTimeStr = `${dateStr}T${timeMsk}`;
+          const dateTimeStr = `${startDate}T${timeMsk}`;
           const mskTime = DateTime.fromISO(dateTimeStr, { zone: 'Europe/Moscow' });
           
           if (mskTime.isValid) {
              await addDoc(collection(db, 'scheduled_messages'), {
                 chatId: chat.chatId,
                 platform: chat.platform,
-                text: `📅 Напоминание: ${title}\n\n${description}`,
+                text: `📅 Напоминание: ${title}\n\n${description}\nОтветственные: ${assignees.join(', ')}`,
                 scheduledAt: mskTime.toJSDate(),
                 status: 'pending',
                 createdAt: serverTimestamp(),
@@ -136,17 +148,37 @@ export default function EventCalendar() {
       }
 
       setIsModalOpen(false);
-      
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setTimeMsk('12:00');
-      setNotifyBot(false);
-      setTargetChatId('');
+      resetForm();
     } catch (error) {
-      console.error("Error adding event:", error);
+      console.error("Error saving event:", error);
       alert("Ошибка при сохранении события");
     }
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setStartDate('');
+    setEndDate('');
+    setTimeMsk('12:00');
+    setNotifyBot(false);
+    setTargetChatId('');
+    setAssignees([]);
+    setEditingEventId(null);
+  };
+
+  const handleEditEvent = (e: React.MouseEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    setTitle(event.title);
+    setDescription(event.description || '');
+    setStartDate(event.startDate || event.date || '');
+    setEndDate(event.endDate || event.startDate || event.date || '');
+    setTimeMsk(event.timeMsk || '12:00');
+    setNotifyBot(event.notifyBot || false);
+    setTargetChatId(event.targetChatId || '');
+    setAssignees(event.assignees || []);
+    setEditingEventId(event.id);
+    setIsModalOpen(true);
   };
 
   const handleDeleteEvent = async (e: React.MouseEvent, eventId: string) => {
@@ -160,7 +192,11 @@ export default function EventCalendar() {
   };
 
   const openModalForDate = (date: Date) => {
+    resetForm();
     setSelectedDate(date);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    setStartDate(dateStr);
+    setEndDate(dateStr);
     setIsModalOpen(true);
   };
 
@@ -220,7 +256,11 @@ export default function EventCalendar() {
         formattedDate = format(day, 'd');
         const cloneDay = day;
         const dateStr = format(cloneDay, 'yyyy-MM-dd');
-        const dayEvents = events.filter(e => e.date === dateStr);
+        const dayEvents = events.filter(e => {
+          const start = e.startDate || e.date;
+          const end = e.endDate || e.startDate || e.date;
+          return dateStr >= start && dateStr <= end;
+        });
         const isSelected = selectedDate && isSameDay(day, selectedDate);
         const isCurrentMonth = isSameMonth(day, monthStart);
         const isToday = isSameDay(day, new Date());
@@ -262,7 +302,12 @@ export default function EventCalendar() {
                   title={event.title}
                 >
                   <div className="flex justify-between items-center">
-                    <span className="truncate">{event.timeMsk} {event.title}</span>
+                    <span 
+                      className="truncate cursor-pointer hover:underline"
+                      onClick={(e) => handleEditEvent(e, event)}
+                    >
+                      {event.timeMsk} {event.title}
+                    </span>
                     <button 
                       onClick={(e) => handleDeleteEvent(e, event.id)}
                       className="opacity-0 group-hover/event:opacity-100 text-purple-300 hover:text-red-400 ml-1"
@@ -308,7 +353,7 @@ export default function EventCalendar() {
               className="bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold">Новое событие</h2>
+                <h2 className="text-xl font-bold">{editingEventId ? 'Редактировать событие' : 'Новое событие'}</h2>
                 <button 
                   onClick={() => setIsModalOpen(false)}
                   className="p-2 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-white"
@@ -318,10 +363,25 @@ export default function EventCalendar() {
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1.5">Дата</label>
-                  <div className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white">
-                    {selectedDate ? format(selectedDate, 'dd MMMM yyyy', { locale: ru }) : ''}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1.5">Начало</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1.5">Конец</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      min={startDate}
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all [color-scheme:dark]"
+                    />
                   </div>
                 </div>
 
@@ -347,6 +407,47 @@ export default function EventCalendar() {
                     rows={3}
                     className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all resize-none"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1.5">Ответственные</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {assignees.map((assignee, index) => (
+                      <span key={index} className="bg-purple-500/20 text-purple-300 px-2 py-1 rounded-lg text-sm flex items-center gap-1">
+                        {assignee}
+                        <button onClick={() => setAssignees(assignees.filter((_, i) => i !== index))} className="hover:text-red-400">
+                          <X size={14} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newAssignee}
+                      onChange={(e) => setNewAssignee(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newAssignee.trim()) {
+                          e.preventDefault();
+                          setAssignees([...assignees, newAssignee.trim()]);
+                          setNewAssignee('');
+                        }
+                      }}
+                      placeholder="Имя сотрудника..."
+                      className="flex-1 bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+                    />
+                    <button 
+                      onClick={() => {
+                        if (newAssignee.trim()) {
+                          setAssignees([...assignees, newAssignee.trim()]);
+                          setNewAssignee('');
+                        }
+                      }}
+                      className="bg-[#222] hover:bg-[#333] px-4 rounded-xl transition-colors text-white"
+                    >
+                      Добавить
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -409,10 +510,10 @@ export default function EventCalendar() {
 
                 <button
                   onClick={handleAddEvent}
-                  disabled={!title.trim() || (notifyBot && !targetChatId)}
+                  disabled={!title.trim() || !startDate || (notifyBot && !targetChatId)}
                   className="w-full py-3 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4 shadow-lg shadow-purple-500/25"
                 >
-                  Создать событие
+                  {editingEventId ? 'Сохранить изменения' : 'Создать событие'}
                 </button>
               </div>
             </motion.div>

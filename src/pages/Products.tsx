@@ -1,42 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Info, Package, X, Upload, Image as ImageIcon, Trash2, AlertTriangle } from 'lucide-react';
-import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { Plus, Info, Package, X, Upload, Image as ImageIcon, Trash2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { resizeImage } from '../utils/image';
 
 interface Product {
   id: string;
   name: string;
   costPrice: number;
+  costSettingId?: string;
   imageUrl: string;
   marketplace: 'wb' | 'ozon' | 'manual';
   apiToken?: string;
+  apiWb?: string;
+  apiOzon?: string;
   salesPercent: number;
+}
+
+interface CostSetting {
+  id: string;
+  name: string;
+  totalCost: number;
 }
 
 export default function Products() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
+  const [costSettings, setCostSettings] = useState<CostSetting[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Stats
+  const [stats, setStats] = useState({ total: 0, wb: 0, ozon: 0 });
   
   // Form State
   const [newProduct, setNewProduct] = useState({
     name: '',
+    costSettingId: '',
     costPrice: '',
     imageUrl: '',
     marketplace: 'wb',
-    apiToken: ''
+    apiWb: '',
+    apiOzon: ''
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
 
   useEffect(() => {
     fetchProducts();
+    fetchCostSettings();
   }, [currentUser]);
+
+  const fetchCostSettings = async () => {
+    if (!currentUser) return;
+    try {
+      const q = query(collection(db, 'users', currentUser.uid, 'cost_settings'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name,
+        totalCost: doc.data().totalCost
+      })) as CostSetting[];
+      setCostSettings(data);
+    } catch (error) {
+      console.error("Error fetching cost settings:", error);
+    }
+  };
 
   const fetchProducts = async () => {
     if (!currentUser) return;
@@ -48,6 +83,17 @@ export default function Products() {
         ...doc.data()
       })) as Product[];
       setProducts(productsData);
+      
+      // Calculate stats
+      let total = 0, wb = 0, ozon = 0;
+      productsData.forEach(p => {
+        if (p.salesPercent) {
+          total += p.salesPercent;
+          if (p.apiWb) wb += p.salesPercent;
+          if (p.apiOzon) ozon += p.salesPercent;
+        }
+      });
+      setStats({ total, wb, ozon });
     } catch (error) {
       console.error("Error fetching products:", error);
     } finally {
@@ -71,7 +117,7 @@ export default function Products() {
 
   const handleAddProduct = async () => {
     if (!currentUser) return;
-    if (!newProduct.name || !newProduct.costPrice) {
+    if (!newProduct.name || (!newProduct.costPrice && !newProduct.costSettingId)) {
       alert('Пожалуйста, заполните обязательные поля (Название, Себестоимость)');
       return;
     }
@@ -84,18 +130,28 @@ export default function Products() {
         finalImageUrl = await resizeImage(selectedFile, 1200, 1600);
       }
 
+      let costPrice = Number(newProduct.costPrice);
+      if (newProduct.costSettingId) {
+        const setting = costSettings.find(s => s.id === newProduct.costSettingId);
+        if (setting) {
+          costPrice = setting.totalCost;
+        }
+      }
+
       await addDoc(collection(db, 'users', currentUser.uid, 'products'), {
         name: newProduct.name,
-        costPrice: Number(newProduct.costPrice),
+        costPrice: costPrice,
+        costSettingId: newProduct.costSettingId || null,
         imageUrl: finalImageUrl,
         marketplace: newProduct.marketplace,
-        apiToken: newProduct.apiToken,
+        apiWb: newProduct.apiWb,
+        apiOzon: newProduct.apiOzon,
         salesPercent: 0, // Default for now
         createdAt: new Date()
       });
       
       setIsModalOpen(false);
-      setNewProduct({ name: '', costPrice: '', imageUrl: '', marketplace: 'wb', apiToken: '' });
+      setNewProduct({ name: '', costSettingId: '', costPrice: '', imageUrl: '', marketplace: 'wb', apiWb: '', apiOzon: '' });
       setSelectedFile(null);
       setPreviewUrl('');
       fetchProducts();
@@ -117,9 +173,60 @@ export default function Products() {
     }
   };
 
+  const handleSync = async () => {
+    if (!currentUser) return;
+    setIsSyncing(true);
+    
+    try {
+      // Simulate API fetch delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      let updatedProducts = [...products];
+      let newTotal = 0, newWb = 0, newOzon = 0;
+
+      for (let i = 0; i < updatedProducts.length; i++) {
+        const p = updatedProducts[i];
+        if (p.apiWb || p.apiOzon) {
+          // Mock sales calculation based on API connection
+          const mockSales = Math.floor(Math.random() * 50) + 10;
+          
+          await updateDoc(doc(db, 'users', currentUser.uid, 'products', p.id), {
+            salesPercent: mockSales
+          });
+          
+          updatedProducts[i] = { ...p, salesPercent: mockSales };
+          
+          newTotal += mockSales;
+          if (p.apiWb) newWb += mockSales;
+          if (p.apiOzon) newOzon += mockSales;
+        } else if (p.salesPercent) {
+          newTotal += p.salesPercent;
+        }
+      }
+      
+      setProducts(updatedProducts);
+      setStats({ total: newTotal, wb: newWb, ozon: newOzon });
+    } catch (error) {
+      console.error("Error syncing with API:", error);
+      alert("Ошибка при синхронизации с API");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold mb-8">Товары</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold">Товары</h1>
+        <button 
+          onClick={handleSync}
+          disabled={isSyncing}
+          className="bg-[#2a2a2a] hover:bg-[#333] text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
+          {isSyncing ? 'Синхронизация...' : 'Синхронизировать API'}
+        </button>
+      </div>
 
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -127,7 +234,7 @@ export default function Products() {
         <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden group">
           <div className="z-10">
             <div className="text-gray-400 text-sm mb-1">Продаж в сумме:</div>
-            <div className="text-2xl font-bold text-white">0</div>
+            <div className="text-2xl font-bold text-white">{stats.total}</div>
           </div>
           <div className="bg-[#2a2a2a] p-3 rounded-xl text-gray-400">
             <Package size={24} />
@@ -138,7 +245,7 @@ export default function Products() {
         <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
           <div className="z-10">
             <div className="text-gray-400 text-sm mb-1">Продаж Wildberries:</div>
-            <div className="text-2xl font-bold text-white">0</div>
+            <div className="text-2xl font-bold text-white">{stats.wb}</div>
           </div>
           <div className="bg-gradient-to-br from-purple-600 to-fuchsia-600 p-3 rounded-xl text-white font-bold text-lg w-12 h-12 flex items-center justify-center">
             WB
@@ -149,7 +256,7 @@ export default function Products() {
         <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
           <div className="z-10">
             <div className="text-gray-400 text-sm mb-1">Продаж OZON:</div>
-            <div className="text-2xl font-bold text-white">0</div>
+            <div className="text-2xl font-bold text-white">{stats.ozon}</div>
           </div>
           <div className="bg-gradient-to-br from-blue-500 to-red-500 p-3 rounded-xl text-white font-bold text-lg w-12 h-12 flex items-center justify-center">
             OZ
@@ -166,7 +273,10 @@ export default function Products() {
             <button className="bg-[#2a2a2a] w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-[#333] transition-colors relative">
               <Info size={20} />
             </button>
-            <button className="bg-green-700 w-10 h-10 rounded-xl flex items-center justify-center text-white hover:bg-green-600 transition-colors relative">
+            <button 
+              onClick={() => navigate('/cost-settings')}
+              className="bg-green-700 w-10 h-10 rounded-xl flex items-center justify-center text-white hover:bg-green-600 transition-colors relative"
+            >
               <Plus size={20} />
             </button>
           </div>
@@ -213,15 +323,25 @@ export default function Products() {
 
             {/* Info Section */}
             <div className="p-5 space-y-3 flex-1 flex flex-col justify-end bg-[#1a1a1a]">
-              <div>
-                <div className="text-gray-500 text-sm">Себестоимость:</div>
-                <div className="text-xl font-medium text-white">{product.costPrice} ₽</div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="text-gray-500 text-sm">Себестоимость:</div>
+                  <div className="text-xl font-medium text-white">{product.costPrice} ₽</div>
+                </div>
+                <div className="flex gap-1">
+                  {product.apiWb && (
+                    <div className="w-6 h-6 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center text-xs font-bold border border-purple-500/30" title="WB API подключен">W</div>
+                  )}
+                  {product.apiOzon && (
+                    <div className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/30" title="Ozon API подключен">O</div>
+                  )}
+                </div>
               </div>
               
               <div className="flex items-end gap-2">
                 <div>
                   <div className="text-gray-500 text-sm">Продажи:</div>
-                  <div className="text-2xl font-bold text-white">{product.salesPercent}%</div>
+                  <div className="text-2xl font-bold text-white">{product.salesPercent || 0} шт</div>
                 </div>
               </div>
             </div>
@@ -266,13 +386,56 @@ export default function Products() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Себестоимость (₽)</label>
+                <label className="block text-sm text-gray-400 mb-1">Выбери себестоимость</label>
+                <select 
+                  value={newProduct.costSettingId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewProduct({...newProduct, costSettingId: val, costPrice: ''});
+                  }}
+                  className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
+                >
+                  <option value="">-- Выберите из списка или введите вручную --</option>
+                  {costSettings.map(setting => (
+                    <option key={setting.id} value={setting.id}>
+                      {setting.name} ({setting.totalCost.toFixed(2)} ₽)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!newProduct.costSettingId && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Себестоимость вручную (₽)</label>
+                  <input 
+                    type="number" 
+                    value={newProduct.costPrice}
+                    onChange={(e) => setNewProduct({...newProduct, costPrice: e.target.value})}
+                    className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">API продаж от WB</label>
                 <input 
-                  type="number" 
-                  value={newProduct.costPrice}
-                  onChange={(e) => setNewProduct({...newProduct, costPrice: e.target.value})}
+                  type="text" 
+                  value={newProduct.apiWb}
+                  onChange={(e) => setNewProduct({...newProduct, apiWb: e.target.value})}
                   className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="0"
+                  placeholder="Токен WB"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">API продаж от Ozon</label>
+                <input 
+                  type="text" 
+                  value={newProduct.apiOzon}
+                  onChange={(e) => setNewProduct({...newProduct, apiOzon: e.target.value})}
+                  className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="Токен Ozon"
                 />
               </div>
 

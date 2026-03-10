@@ -451,7 +451,7 @@ export default function BotScenarios() {
         tagColor: type === 'trigger' ? '#3b82f6' : '',
         link: type === 'trigger' ? '' : '',
         command: type === 'command' ? '/privet' : '',
-        groupUsername: type === 'condition' ? '' : '',
+        groupUsername: type === 'condition' ? 'https://t.me/om_esthetic' : '',
         keyboard: [],
         platform: selectedPlatform
       },
@@ -679,14 +679,17 @@ export default function BotScenarios() {
               {selectedNode.data.type === 'message' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1 flex items-center gap-1"><ImageIcon size={12}/> Медиа (URL фото/видео)</label>
+                    <label className="block text-xs text-gray-400 mb-1 flex items-center gap-1"><ImageIcon size={12}/> Медиа (URL фото/видео или ссылка на пост ТГ)</label>
                     <input 
                       type="text" 
                       value={selectedNode.data.mediaUrl as string || ''} 
                       onChange={(e) => updateNodeData('mediaUrl', e.target.value)}
-                      placeholder="https://example.com/image.jpg"
+                      placeholder="https://t.me/pm_video1/8 или URL картинки"
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Поддерживаются прямые ссылки на картинки и ссылки на посты Telegram (например: https://t.me/pm_video1/8). Бот ВКонтакте также сможет подхватить медиа из Telegram.
+                    </p>
                   </div>
 
                   <div>
@@ -903,15 +906,15 @@ export default function BotScenarios() {
               {selectedNode.data.type === 'condition' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Юзернейм группы/канала</label>
+                    <label className="block text-xs text-gray-400 mb-1">Ссылка на группу/канал</label>
                     <input 
                       type="text" 
                       value={selectedNode.data.groupUsername as string || ''}
                       onChange={(e) => updateNodeData('groupUsername', e.target.value)}
-                      placeholder="@my_channel"
+                      placeholder="https://t.me/om_esthetic"
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500 font-mono"
                     />
-                    <p className="text-[10px] text-gray-500 mt-1">Например: @my_channel или ID. Бот должен быть администратором в этом канале.</p>
+                    <p className="text-[10px] text-gray-500 mt-1">Например: https://t.me/om_esthetic или @om_esthetic. Бот должен быть администратором в этом канале.</p>
                   </div>
                 </div>
               )}

@@ -159,6 +159,10 @@ export default function Dialogs() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   
+  // Tagging
+  const [newTag, setNewTag] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#a855f7');
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- Actions ---
@@ -1559,10 +1563,10 @@ export default function Dialogs() {
                     </a>
                   </div>
 
-                  {selectedChat.tags && selectedChat.tags.length > 0 && (
-                    <div className="mt-6 pt-6 border-t border-white/5">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="text-sm font-medium text-gray-400">Теги пользователя</h4>
+                  <div className="mt-6 pt-6 border-t border-white/5">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="text-sm font-medium text-gray-400">Теги пользователя</h4>
+                      {selectedChat.tags && selectedChat.tags.length > 0 && (
                         <button 
                           onClick={async () => {
                             if (window.confirm('Удалить все теги у этого пользователя?')) {
@@ -1578,7 +1582,73 @@ export default function Dialogs() {
                         >
                           Удалить все
                         </button>
-                      </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={newTag}
+                        onChange={(e) => setNewTag(e.target.value)}
+                        placeholder="Новый тег..."
+                        className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 outline-none"
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter' && newTag.trim()) {
+                            e.preventDefault();
+                            try {
+                              const tag = newTag.trim();
+                              const chatRef = doc(db, 'chats', selectedChat.id);
+                              const currentTags = selectedChat.tags || [];
+                              if (!currentTags.includes(tag)) {
+                                const newTags = [...currentTags, tag];
+                                const currentColors = selectedChat.tagColors || {};
+                                await updateDoc(chatRef, { 
+                                  tags: newTags,
+                                  tagColors: { ...currentColors, [tag]: newTagColor }
+                                });
+                              }
+                              setNewTag('');
+                            } catch (error) {
+                              console.error('Error adding tag:', error);
+                            }
+                          }
+                        }}
+                      />
+                      <input
+                        type="color"
+                        value={newTagColor}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
+                        title="Цвет тега"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (newTag.trim()) {
+                            try {
+                              const tag = newTag.trim();
+                              const chatRef = doc(db, 'chats', selectedChat.id);
+                              const currentTags = selectedChat.tags || [];
+                              if (!currentTags.includes(tag)) {
+                                const newTags = [...currentTags, tag];
+                                const currentColors = selectedChat.tagColors || {};
+                                await updateDoc(chatRef, { 
+                                  tags: newTags,
+                                  tagColors: { ...currentColors, [tag]: newTagColor }
+                                });
+                              }
+                              setNewTag('');
+                            } catch (error) {
+                              console.error('Error adding tag:', error);
+                            }
+                          }
+                        }}
+                        className="bg-purple-600 hover:bg-purple-500 text-white px-3 rounded-lg flex items-center justify-center transition-colors"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+
+                    {selectedChat.tags && selectedChat.tags.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {selectedChat.tags.map(tag => {
                           const color = selectedChat.tagColors?.[tag] || '#a855f7';
@@ -1610,8 +1680,8 @@ export default function Dialogs() {
                           );
                         })}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   <div className="mt-auto pt-6 border-t border-white/5">
                     <div className="text-xs text-gray-600 font-mono">

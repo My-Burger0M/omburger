@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteField } from 'firebase/firestore';
-import { User, Tag, Trash2, Search, Filter } from 'lucide-react';
+import { User, Tag, Trash2, Search, Filter, Plus, X } from 'lucide-react';
 
 export default function CRM() {
   const [users, setUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Tagging
+  const [newTag, setNewTag] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#a855f7');
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -145,24 +149,135 @@ export default function CRM() {
               <div className="bg-[#222] p-4 rounded-xl border border-white/5">
                 <h3 className="text-sm font-medium text-gray-400 mb-4">Теги и Сегменты</h3>
                 
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    placeholder="Новый тег..."
+                    className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 outline-none"
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter' && newTag.trim()) {
+                        e.preventDefault();
+                        try {
+                          const tag = newTag.trim();
+                          const userRef = doc(db, 'chats', selectedUser.id);
+                          const currentTags = selectedUser.tags || [];
+                          if (!currentTags.includes(tag)) {
+                            const newTags = [...currentTags, tag];
+                            const currentColors = selectedUser.tagColors || {};
+                            await updateDoc(userRef, { 
+                              tags: newTags,
+                              tagColors: { ...currentColors, [tag]: newTagColor }
+                            });
+                            
+                            // Update local state
+                            const updatedUser = { 
+                              ...selectedUser, 
+                              tags: newTags,
+                              tagColors: { ...currentColors, [tag]: newTagColor }
+                            };
+                            setSelectedUser(updatedUser);
+                            setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+                          }
+                          setNewTag('');
+                        } catch (error) {
+                          console.error('Error adding tag:', error);
+                        }
+                      }
+                    }}
+                  />
+                  <input
+                    type="color"
+                    value={newTagColor}
+                    onChange={(e) => setNewTagColor(e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
+                    title="Цвет тега"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (newTag.trim()) {
+                        try {
+                          const tag = newTag.trim();
+                          const userRef = doc(db, 'chats', selectedUser.id);
+                          const currentTags = selectedUser.tags || [];
+                          if (!currentTags.includes(tag)) {
+                            const newTags = [...currentTags, tag];
+                            const currentColors = selectedUser.tagColors || {};
+                            await updateDoc(userRef, { 
+                              tags: newTags,
+                              tagColors: { ...currentColors, [tag]: newTagColor }
+                            });
+                            
+                            // Update local state
+                            const updatedUser = { 
+                              ...selectedUser, 
+                              tags: newTags,
+                              tagColors: { ...currentColors, [tag]: newTagColor }
+                            };
+                            setSelectedUser(updatedUser);
+                            setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+                          }
+                          setNewTag('');
+                        } catch (error) {
+                          console.error('Error adding tag:', error);
+                        }
+                      }
+                    }}
+                    className="bg-purple-600 hover:bg-purple-500 text-white px-3 rounded-lg flex items-center justify-center transition-colors"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+
                 <div className="flex flex-wrap gap-2 mb-6">
                   {selectedUser.tags && selectedUser.tags.length > 0 ? (
-                    selectedUser.tags.map((tag: string, i: number) => (
-                      <span key={i} className="px-3 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm flex items-center gap-2">
-                        <Tag size={12} /> {tag}
-                      </span>
-                    ))
+                    selectedUser.tags.map((tag: string, i: number) => {
+                      const color = selectedUser.tagColors?.[tag] || '#a855f7';
+                      return (
+                        <span 
+                          key={i} 
+                          className="px-3 py-1 rounded-lg text-sm flex items-center gap-2 text-white group"
+                          style={{ backgroundColor: color }}
+                        >
+                          <Tag size={12} /> {tag}
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm(`Удалить тег #${tag}?`)) {
+                                try {
+                                  const userRef = doc(db, 'chats', selectedUser.id);
+                                  const newTags = selectedUser.tags.filter((t: string) => t !== tag);
+                                  await updateDoc(userRef, { tags: newTags });
+                                  
+                                  const updatedUser = { ...selectedUser, tags: newTags };
+                                  setSelectedUser(updatedUser);
+                                  setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+                                } catch (e) {
+                                  console.error('Error removing tag:', e);
+                                }
+                              }
+                            }}
+                            className="p-0.5 hover:bg-black/20 rounded opacity-50 hover:opacity-100 transition-all ml-1"
+                            title="Удалить тег"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      );
+                    })
                   ) : (
                     <div className="text-gray-500 text-sm italic">Нет тегов</div>
                   )}
                 </div>
 
-                <button 
-                  onClick={handleDeleteTags}
-                  className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 text-sm"
-                >
-                  <Trash2 size={16} /> Удалить все теги
-                </button>
+                {selectedUser.tags && selectedUser.tags.length > 0 && (
+                  <button 
+                    onClick={handleDeleteTags}
+                    className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 text-sm"
+                  >
+                    <Trash2 size={16} /> Удалить все теги
+                  </button>
+                )}
               </div>
 
               <div className="bg-[#222] p-4 rounded-xl border border-white/5">

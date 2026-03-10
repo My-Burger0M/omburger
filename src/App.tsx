@@ -15,6 +15,7 @@ import CRM from './pages/CRM';
 import EventCalendar from './pages/EventCalendar';
 import Teams from './pages/Teams';
 import KnowledgeBase from './pages/KnowledgeBase';
+import CostSettings from './pages/CostSettings';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -84,6 +85,7 @@ function AppContent() {
                   <Route path="/teams" element={<Teams />} />
                   <Route path="/knowledge-base" element={<KnowledgeBase />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/cost-settings" element={<CostSettings />} />
                 </Routes>
               </div>
             </main>

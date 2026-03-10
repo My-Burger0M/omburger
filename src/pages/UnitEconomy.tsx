@@ -29,6 +29,12 @@ export default function UnitEconomy() {
     ozonPurchases: 0,
     ozonPayouts: 0,
   });
+  const [localStats, setLocalStats] = useState<GlobalStats>({
+    wbPurchases: 0,
+    wbPayouts: 0,
+    ozonPurchases: 0,
+    ozonPayouts: 0,
+  });
   const [months, setMonths] = useState<MonthData[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,7 +60,9 @@ export default function UnitEconomy() {
       // Fetch global stats
       const statsDoc = await getDoc(doc(db, 'users', currentUser.uid, 'settings', 'unitEconomy'));
       if (statsDoc.exists()) {
-        setGlobalStats(statsDoc.data() as GlobalStats);
+        const data = statsDoc.data() as GlobalStats;
+        setGlobalStats(data);
+        setLocalStats(data);
       }
 
       // Fetch months
@@ -69,8 +77,15 @@ export default function UnitEconomy() {
     }
   };
 
-  const handleUpdateGlobalStat = async (field: keyof GlobalStats, value: number) => {
+  const handleLocalStatChange = (field: keyof GlobalStats, value: number) => {
+    setLocalStats(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleUpdateGlobalStat = async (field: keyof GlobalStats) => {
     if (!currentUser) return;
+    const value = localStats[field];
+    if (value === globalStats[field]) return; // No change
+
     const newStats = { ...globalStats, [field]: value };
     setGlobalStats(newStats);
     try {
@@ -173,8 +188,9 @@ export default function UnitEconomy() {
           <div className="flex items-end gap-2">
             <input 
               type="number" 
-              value={globalStats.wbPurchases || ''}
-              onChange={(e) => handleUpdateGlobalStat('wbPurchases', Number(e.target.value))}
+              value={localStats.wbPurchases || ''}
+              onChange={(e) => handleLocalStatChange('wbPurchases', Number(e.target.value))}
+              onBlur={() => handleUpdateGlobalStat('wbPurchases')}
               className="bg-transparent text-3xl font-bold text-white w-full outline-none"
               placeholder="0"
             />
@@ -190,8 +206,9 @@ export default function UnitEconomy() {
           <div className="flex items-end gap-2">
             <input 
               type="number" 
-              value={globalStats.wbPayouts || ''}
-              onChange={(e) => handleUpdateGlobalStat('wbPayouts', Number(e.target.value))}
+              value={localStats.wbPayouts || ''}
+              onChange={(e) => handleLocalStatChange('wbPayouts', Number(e.target.value))}
+              onBlur={() => handleUpdateGlobalStat('wbPayouts')}
               className="bg-transparent text-3xl font-bold text-white w-full outline-none"
               placeholder="0"
             />
@@ -207,8 +224,9 @@ export default function UnitEconomy() {
           <div className="flex items-end gap-2">
             <input 
               type="number" 
-              value={globalStats.ozonPurchases || ''}
-              onChange={(e) => handleUpdateGlobalStat('ozonPurchases', Number(e.target.value))}
+              value={localStats.ozonPurchases || ''}
+              onChange={(e) => handleLocalStatChange('ozonPurchases', Number(e.target.value))}
+              onBlur={() => handleUpdateGlobalStat('ozonPurchases')}
               className="bg-transparent text-3xl font-bold text-white w-full outline-none"
               placeholder="0"
             />
@@ -224,8 +242,9 @@ export default function UnitEconomy() {
           <div className="flex items-end gap-2">
             <input 
               type="number" 
-              value={globalStats.ozonPayouts || ''}
-              onChange={(e) => handleUpdateGlobalStat('ozonPayouts', Number(e.target.value))}
+              value={localStats.ozonPayouts || ''}
+              onChange={(e) => handleLocalStatChange('ozonPayouts', Number(e.target.value))}
+              onBlur={() => handleUpdateGlobalStat('ozonPayouts')}
               className="bg-transparent text-3xl font-bold text-white w-full outline-none"
               placeholder="0"
             />
