@@ -692,6 +692,41 @@ async function startServer() {
         }
       } else if (node.type === 'command') {
         // Command node acts as a pass-through when reached via flow (e.g. from a Trigger node)
+      } else if (node.type === 'condition') {
+        const { groupUsername } = node.data;
+        let isSubscribed = false;
+        
+        try {
+          const userDocRef = doc(db, 'users', userId);
+          const userDocSnap = await getDoc(userDocRef);
+          const tokens = userDocSnap.data()?.tokens || {};
+          
+          if (platform === 'tg' && tokens.tg && groupUsername) {
+            const bot = new Telegraf(tokens.tg);
+            // Ensure groupUsername starts with @ if it's a username
+            const targetChat = groupUsername.startsWith('@') || groupUsername.startsWith('-') ? groupUsername : `@${groupUsername}`;
+            const member = await bot.telegram.getChatMember(targetChat, parseInt(chatId));
+            isSubscribed = ['creator', 'administrator', 'member'].includes(member.status);
+          } else if (platform === 'vk' && tokens.vk && groupUsername) {
+            const vkApi = new VK({ token: tokens.vk });
+            // Extract group ID from username or URL
+            let groupId = groupUsername;
+            if (groupId.includes('vk.com/')) {
+              groupId = groupId.split('vk.com/')[1];
+            }
+            const isMember = await vkApi.api.groups.isMember({ group_id: groupId, user_id: parseInt(chatId) });
+            isSubscribed = isMember === 1;
+          }
+        } catch (e) {
+          console.error('Error checking subscription:', e);
+          // Default to false on error
+        }
+        
+        const trueEdge = edges.find(e => e.source === currentNodeId && e.sourceHandle === 'true');
+        const falseEdge = edges.find(e => e.source === currentNodeId && e.sourceHandle === 'false');
+        
+        currentNodeId = isSubscribed ? (trueEdge ? trueEdge.target : null) : (falseEdge ? falseEdge.target : null);
+        continue; // Skip the default edge finding logic
       }
 
       // Find next node

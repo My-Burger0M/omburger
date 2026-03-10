@@ -238,7 +238,7 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          <div className="flex-1 min-h-[300px]">
+          <div className="flex-1 min-h-[300px] h-[400px] w-full">
             {statsData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={statsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>

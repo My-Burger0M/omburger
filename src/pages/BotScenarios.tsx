@@ -183,11 +183,33 @@ const CommandNode = ({ data }: { data: any }) => (
   </div>
 );
 
+const ConditionNode = ({ data }: { data: any }) => (
+  <div className="bg-[#1a1a1a] border border-orange-500/50 rounded-xl w-56 shadow-lg shadow-orange-900/20">
+    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-orange-500" />
+    <div className="bg-orange-500/10 p-2 rounded-t-xl border-b border-orange-500/20 flex items-center gap-2">
+      <AlertCircle size={14} className="text-orange-400" />
+      <span className="text-xs font-bold text-orange-100">{data.label || 'Условие'}</span>
+    </div>
+    <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
+      <div className="truncate text-orange-300 font-mono text-[10px] bg-orange-500/10 p-1.5 rounded text-center">
+        {data.groupUsername ? `Подписка на ${data.groupUsername}` : 'Группа не указана'}
+      </div>
+      <div className="flex justify-between mt-2 px-2">
+        <span className="text-[10px] text-green-400">Да</span>
+        <span className="text-[10px] text-red-400">Нет</span>
+      </div>
+    </div>
+    <Handle type="source" position={Position.Bottom} id="true" className="w-3 h-3 bg-green-500" style={{ left: '25%' }} />
+    <Handle type="source" position={Position.Bottom} id="false" className="w-3 h-3 bg-red-500" style={{ left: '75%' }} />
+  </div>
+);
+
 const nodeTypes = {
   start: StartNode,
   message: MessageNode,
   trigger: TriggerNode,
   command: CommandNode,
+  condition: ConditionNode,
 };
 
 const edgeTypes = {
@@ -414,12 +436,12 @@ export default function BotScenarios() {
     [setEdges],
   );
 
-  const addNode = (type: 'message' | 'trigger' | 'command') => {
+  const addNode = (type: 'message' | 'trigger' | 'command' | 'condition') => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: type,
       data: { 
-        label: type === 'message' ? 'Сообщение' : type === 'trigger' ? 'Вход по ссылке' : 'Команда',
+        label: type === 'message' ? 'Сообщение' : type === 'trigger' ? 'Вход по ссылке' : type === 'command' ? 'Команда' : 'Условие',
         type,
         text: '',
         mediaUrl: '',
@@ -429,6 +451,7 @@ export default function BotScenarios() {
         tagColor: type === 'trigger' ? '#3b82f6' : '',
         link: type === 'trigger' ? '' : '',
         command: type === 'command' ? '/privet' : '',
+        groupUsername: type === 'condition' ? '' : '',
         keyboard: [],
         platform: selectedPlatform
       },
@@ -566,6 +589,9 @@ export default function BotScenarios() {
               <div className="w-px h-6 bg-white/10 self-center mx-1"></div>
               <button onClick={() => addNode('message')} className="p-2 hover:bg-[#333] rounded-lg text-blue-400 flex items-center gap-2 text-sm" title="Добавить сообщение">
                 <MessageSquare size={16} /> Сообщение
+              </button>
+              <button onClick={() => addNode('condition')} className="p-2 hover:bg-[#333] rounded-lg text-orange-400 flex items-center gap-2 text-sm" title="Добавить условие (подписка)">
+                <AlertCircle size={16} /> Условие
               </button>
             </Panel>
           </ReactFlow>
@@ -870,6 +896,22 @@ export default function BotScenarios() {
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-pink-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">Бот запустит эту ветку, если пользователь напишет эту команду.</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.data.type === 'condition' && (
+                <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Юзернейм группы/канала</label>
+                    <input 
+                      type="text" 
+                      value={selectedNode.data.groupUsername as string || ''}
+                      onChange={(e) => updateNodeData('groupUsername', e.target.value)}
+                      placeholder="@my_channel"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500 font-mono"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">Например: @my_channel или ID. Бот должен быть администратором в этом канале.</p>
                   </div>
                 </div>
               )}
