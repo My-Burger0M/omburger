@@ -47,8 +47,10 @@ interface Message {
   sender: 'user' | 'admin';
   timestamp: any;
   mediaUrl?: string;
-  mediaType?: 'photo' | 'video';
+  mediaType?: 'photo' | 'video' | 'voice' | 'animation';
   keyboard?: any;
+  playedAt?: any;
+  voiceDuration?: number;
 }
 
 interface InlineButton {
@@ -149,11 +151,13 @@ export default function Dialogs() {
   const [showNotes, setShowNotes] = useState(false);
   const [isGlobalNotes, setIsGlobalNotes] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [scheduledMessages, setScheduledMessages] = useState<any[]>([]);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [scheduledTime, setScheduledTime] = useState('');
   const [showScheduler, setShowScheduler] = useState(false);
   const [noteToSchedule, setNoteToSchedule] = useState<Note | null>(null);
+  const [notesTab, setNotesTab] = useState<'notes' | 'scheduled'>('notes');
 
   // Renaming
   const [isRenaming, setIsRenaming] = useState(false);
@@ -390,6 +394,15 @@ export default function Dialogs() {
     }
   };
 
+  const cancelScheduledMessage = async (id: string) => {
+    if (!window.confirm('Вы уверены, что хотите отменить эту рассылку?')) return;
+    try {
+      await deleteDoc(doc(db, 'scheduled_messages', id));
+    } catch (error) {
+      console.error('Error canceling scheduled message:', error);
+    }
+  };
+
   const handleUseNote = (note: Note) => {
     if (isGlobalNotes) {
         // In global mode, selecting a note prepares it for broadcast
@@ -592,6 +605,19 @@ export default function Dialogs() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'), where('userId', '==', currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const scheduledData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setScheduledMessages(scheduledData.sort((a, b) => b.scheduledAt?.toMillis() - a.scheduledAt?.toMillis()));
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -605,12 +631,15 @@ export default function Dialogs() {
       if (msg.mediaType === 'voice' && msg.playedAt) {
         const playedTime = msg.playedAt.toMillis ? msg.playedAt.toMillis() : msg.playedAt;
         const timeElapsed = now - playedTime;
-        if (timeElapsed >= 60000) {
+        const duration = msg.voiceDuration || 0;
+        const deleteDelay = duration > 120 ? 180000 : 60000; // > 2 mins -> 3 mins, else 1 min
+
+        if (timeElapsed >= deleteDelay) {
           deleteDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id)).catch(console.error);
         } else {
           const timeout = setTimeout(() => {
             deleteDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id)).catch(console.error);
-          }, 60000 - timeElapsed);
+          }, deleteDelay - timeElapsed);
           timeouts.push(timeout);
         }
       }
@@ -621,11 +650,12 @@ export default function Dialogs() {
     };
   }, [messages, selectedChatId]);
 
-  const handleVoicePlay = async (msgId: string, playedAt: any) => {
+  const handleVoicePlay = async (msgId: string, playedAt: any, duration: number) => {
     if (!playedAt && selectedChatId) {
       try {
         await updateDoc(doc(db, 'chats', selectedChatId, 'messages', msgId), {
-          playedAt: serverTimestamp()
+          playedAt: serverTimestamp(),
+          voiceDuration: duration
         });
       } catch (e) {
         console.error('Error updating playedAt:', e);
@@ -942,10 +972,12 @@ export default function Dialogs() {
                             src={msg.mediaUrl} 
                             controls 
                             className="h-8 w-full max-w-[200px]" 
-                            onPlay={() => handleVoicePlay(msg.id, msg.playedAt)}
+                            onPlay={(e) => handleVoicePlay(msg.id, msg.playedAt, (e.target as HTMLAudioElement).duration)}
                           />
                           <div className="text-[10px] text-red-400">
-                            {msg.playedAt ? 'Удалится через 1 мин после прослушивания' : 'Удалится через 1 мин после прослушивания'}
+                            {msg.playedAt 
+                              ? (msg.voiceDuration && msg.voiceDuration > 120 ? 'Удалится через 3 мин после прослушивания' : 'Удалится через 1 мин после прослушивания') 
+                              : 'Удалится после прослушивания'}
                           </div>
                         </div>
                       ) : msg.mediaType === 'animation' ? (
@@ -953,6 +985,12 @@ export default function Dialogs() {
                           <PlayCircle size={16} />
                           <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="hover:text-white transition-colors truncate max-w-[200px]">
                             (GIF) {msg.mediaUrl}
+                          </a>
+                        </div>
+                      ) : msg.sender === 'admin' ? (
+                        <div className="bg-[#2a2a2a] p-3 text-gray-400 text-sm">
+                          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                            (фото)
                           </a>
                         </div>
                       ) : (
@@ -1229,10 +1267,28 @@ export default function Dialogs() {
                 className={`absolute top-0 right-0 bottom-0 bg-[#111] border-l border-white/10 z-30 flex flex-col shadow-2xl ${isGlobalNotes ? 'w-[600px]' : 'w-80'}`}
               >
                 <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#1a1a1a]">
-                  <h3 className="font-bold text-white flex items-center gap-2">
-                      <StickyNote size={16} /> 
-                      {isGlobalNotes ? 'Заметки и рассылка' : 'Заметки'}
-                  </h3>
+                  <div className="flex items-center gap-4">
+                    <h3 className="font-bold text-white flex items-center gap-2">
+                        <StickyNote size={16} /> 
+                        {isGlobalNotes ? 'Заметки и рассылка' : 'Заметки'}
+                    </h3>
+                    {isGlobalNotes && (
+                      <div className="flex bg-[#222] rounded-lg p-1">
+                        <button
+                          onClick={() => setNotesTab('notes')}
+                          className={`px-3 py-1 text-xs rounded-md transition-colors ${notesTab === 'notes' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                          Заметки
+                        </button>
+                        <button
+                          onClick={() => setNotesTab('scheduled')}
+                          className={`px-3 py-1 text-xs rounded-md transition-colors ${notesTab === 'scheduled' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                          Запланированные ({scheduledMessages.length})
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button onClick={() => setShowNotes(false)} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
 
@@ -1263,7 +1319,41 @@ export default function Dialogs() {
                     )}
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                    {editingNote ? (
+                    {notesTab === 'scheduled' ? (
+                      <div className="space-y-3">
+                        {scheduledMessages.length === 0 ? (
+                          <div className="text-center text-gray-500 py-8">Нет запланированных рассылок</div>
+                        ) : (
+                          scheduledMessages.map(msg => {
+                            const chat = chats.find(c => c.chatId === msg.chatId && c.platform === msg.platform);
+                            return (
+                              <div key={msg.id} className="bg-[#222] border border-blue-500/20 rounded-xl p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="font-medium text-white">
+                                    {chat ? (chat.customName || chat.displayName || chat.username) : `ID: ${msg.chatId}`}
+                                    <span className="text-xs text-gray-500 ml-2">({msg.platform})</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-xs text-gray-500">
+                                      {msg.scheduledAt?.toDate().toLocaleString('ru-RU')}
+                                    </div>
+                                    <button
+                                      onClick={() => cancelScheduledMessage(msg.id)}
+                                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                                    >
+                                      Отменить
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="text-sm text-gray-300 mt-2 line-clamp-2">
+                                  {msg.text || (msg.mediaUrl ? '[Медиафайл]' : '')}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    ) : editingNote ? (
                         <div className="space-y-3">
                         <input 
                             className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-purple-500 outline-none"

@@ -703,9 +703,16 @@ async function startServer() {
           
           if (platform === 'tg' && tokens.tg && groupUsername) {
             const bot = new Telegraf(tokens.tg);
-            // Ensure groupUsername starts with @ if it's a username
-            const targetChat = groupUsername.startsWith('@') || groupUsername.startsWith('-') ? groupUsername : `@${groupUsername}`;
-            const member = await bot.telegram.getChatMember(targetChat, parseInt(chatId));
+            // Extract username from URL if necessary
+            let targetChat = groupUsername;
+            if (targetChat.includes('t.me/')) {
+              targetChat = targetChat.split('t.me/')[1];
+            }
+            // Ensure groupUsername starts with @ if it's a username and not a chat ID
+            if (!targetChat.startsWith('@') && !targetChat.startsWith('-')) {
+              targetChat = `@${targetChat}`;
+            }
+            const member = await bot.telegram.getChatMember(targetChat, Number(chatId));
             isSubscribed = ['creator', 'administrator', 'member'].includes(member.status);
           } else if (platform === 'vk' && tokens.vk && groupUsername) {
             const vkApi = new VK({ token: tokens.vk });
@@ -998,9 +1005,13 @@ async function startServer() {
               if (btn.url) {
                 return { action: { type: 'open_link', link: btn.url, label: btn.text } };
               }
+              let btnColor = btn.color;
+              if (!btnColor || btnColor === 'default') {
+                btnColor = 'secondary';
+              }
               return { 
                 action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd: btn.callback_data }) },
-                color: btn.color || 'secondary'
+                color: btnColor
               };
             })
           );

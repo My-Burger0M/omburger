@@ -78,6 +78,10 @@ export default function Mailings() {
   const [failedMessages, setFailedMessages] = useState<FailedMessage[]>([]);
   const [showFailedModal, setShowFailedModal] = useState(false);
 
+  // Scheduled messages state
+  const [scheduledMessages, setScheduledMessages] = useState<any[]>([]);
+  const [showScheduledModal, setShowScheduledModal] = useState(false);
+
   // Notes state
   const [notes, setNotes] = useState<any[]>([]);
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -94,6 +98,7 @@ export default function Mailings() {
     fetchFailedMessages();
     if (currentUser) {
       fetchNotes();
+      fetchScheduledMessages();
     }
   }, [currentUser]);
 
@@ -218,6 +223,33 @@ export default function Mailings() {
     }
   };
 
+  const fetchScheduledMessages = async () => {
+    if (!currentUser) return;
+    try {
+      const q = query(collection(db, 'scheduled_messages'), where('status', '==', 'pending'), where('userId', '==', currentUser.uid));
+      const snapshot = await getDocs(q);
+      const scheduled: any[] = [];
+      snapshot.forEach(doc => {
+        scheduled.push({ id: doc.id, ...doc.data() });
+      });
+      setScheduledMessages(scheduled.sort((a, b) => b.scheduledAt?.toMillis() - a.scheduledAt?.toMillis()));
+    } catch (error) {
+      console.error('Error fetching scheduled messages:', error);
+    }
+  };
+
+  const cancelScheduledMessage = async (id: string) => {
+    if (!window.confirm('Вы уверены, что хотите отменить эту рассылку?')) return;
+    try {
+      await deleteDoc(doc(db, 'scheduled_messages', id));
+      setScheduledMessages(prev => prev.filter(msg => msg.id !== id));
+      showToast('Успех', 'Запланированная рассылка отменена');
+    } catch (error) {
+      console.error('Error canceling scheduled message:', error);
+      showToast('Ошибка', 'Не удалось отменить рассылку', 'error');
+    }
+  };
+
   const toggleTagFilter = (tag: string) => {
     setSelectedTags(prev => 
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
@@ -245,8 +277,12 @@ export default function Mailings() {
     setIsSending(true);
     try {
       let sentCount = 0;
+      let batch = writeBatch(db);
+      let operationCount = 0;
+
       for (const user of filteredUsers) {
-        await addDoc(collection(db, 'scheduled_messages'), {
+        const docRef = doc(collection(db, 'scheduled_messages'));
+        batch.set(docRef, {
           userId: currentUser.uid,
           platform: user.platform,
           chatId: user.chatId,
@@ -258,8 +294,21 @@ export default function Mailings() {
           scheduledAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
+        
         sentCount++;
+        operationCount++;
+
+        if (operationCount === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          operationCount = 0;
+        }
       }
+
+      if (operationCount > 0) {
+        await batch.commit();
+      }
+
       showToast('Успех', `Рассылка успешно запланирована для ${sentCount} пользователей.`);
       setMessageText('');
       setMediaUrl('');
@@ -287,15 +336,26 @@ export default function Mailings() {
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Рассылки</h1>
-        {failedMessages.length > 0 && (
-          <button 
-            onClick={() => setShowFailedModal(true)}
-            className="bg-red-500/20 text-red-400 hover:bg-red-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors"
-          >
-            <AlertCircle size={18} />
-            Ошибки рассылок ({failedMessages.length})
-          </button>
-        )}
+        <div className="flex gap-4">
+          {scheduledMessages.length > 0 && (
+            <button 
+              onClick={() => setShowScheduledModal(true)}
+              className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors"
+            >
+              <MessageSquare size={18} />
+              Запланированные ({scheduledMessages.length})
+            </button>
+          )}
+          {failedMessages.length > 0 && (
+            <button 
+              onClick={() => setShowFailedModal(true)}
+              className="bg-red-500/20 text-red-400 hover:bg-red-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors"
+            >
+              <AlertCircle size={18} />
+              Ошибки рассылок ({failedMessages.length})
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -587,6 +647,58 @@ export default function Mailings() {
           </div>
         </div>
       </div>
+
+      {/* Scheduled Messages Modal */}
+      {showScheduledModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <MessageSquare className="text-blue-500" />
+                Запланированные рассылки
+              </h2>
+              <div className="flex items-center gap-4">
+                <button onClick={() => setShowScheduledModal(false)} className="text-gray-400 hover:text-white">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+              {scheduledMessages.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">Нет запланированных рассылок</div>
+              ) : (
+                scheduledMessages.map(msg => {
+                  const user = users.find(u => u.chatId === msg.chatId && u.platform === msg.platform);
+                  return (
+                    <div key={msg.id} className="bg-[#222] border border-blue-500/20 rounded-xl p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="font-medium text-white">
+                          {user ? (user.displayName || user.username) : `ID: ${msg.chatId}`}
+                          <span className="text-xs text-gray-500 ml-2">({msg.platform})</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs text-gray-500">
+                            {msg.scheduledAt?.toDate().toLocaleString('ru-RU')}
+                          </div>
+                          <button
+                            onClick={() => cancelScheduledMessage(msg.id)}
+                            className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            Отменить
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-300 mt-2 line-clamp-2">
+                        {msg.text || (msg.mediaUrl ? '[Медиафайл]' : '')}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Failed Messages Modal */}
       {showFailedModal && (
