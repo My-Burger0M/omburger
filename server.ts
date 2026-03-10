@@ -22,6 +22,7 @@ console.error = (...args) => {
 setLogLevel('silent'); // Also suppress internal firestore logs
 
 async function startServer() {
+  console.log('startServer called');
   const app = express();
   const PORT = 3000;
 
@@ -1471,10 +1472,17 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-      initBots();
-    });
+    // Only bind to the port if this file is run directly (e.g. via node or tsx)
+    // This prevents EADDRINUSE when imported as a module
+    if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts')) {
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        initBots();
+      });
+    } else {
+      // Still init bots if imported, but don't listen on port
+      initBots().catch(err => console.error('Error in initBots:', err));
+    }
   } else {
     // On Vercel, we still need to init bots (fetch tokens) but we don't start long polling
     // We do it once when the instance starts
