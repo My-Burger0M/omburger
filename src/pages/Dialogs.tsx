@@ -514,9 +514,10 @@ export default function Dialogs() {
               setSelectedRecipients([]);
               setShowNotes(false);
           }
-      } catch (error) {
+      } catch (error: any) {
           console.error('Error sending note:', error);
-          alert('Ошибка отправки');
+          const errorMessage = error.response?.data?.error || error.message || 'Неизвестная ошибка';
+          alert(`Ошибка отправки сообщения: ${errorMessage}`);
       }
   };
 
@@ -674,9 +675,10 @@ export default function Dialogs() {
         lastMessage: currentMediaUrl ? `[${currentMediaType === 'photo' ? 'Фото' : 'Видео'}] ${messageText}` : messageText,
         lastMessageAt: serverTimestamp()
       }, { merge: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
-      alert('Ошибка отправки. Проверьте консоль.');
+      const errorMessage = error.response?.data?.error || error.message || 'Неизвестная ошибка';
+      alert(`Ошибка отправки сообщения: ${errorMessage}`);
     }
   };
 

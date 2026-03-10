@@ -1090,7 +1090,8 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
-      res.status(500).json({ error: 'Failed to send message' });
+      const errorMessage = error.response?.description || error.response?.data?.description || error.message || 'Failed to send message';
+      res.status(500).json({ error: errorMessage });
     }
   });
 
