@@ -115,8 +115,17 @@ const MessageNode = ({ data }: { data: any }) => (
           {data.keyboard.map((row: any[], i: number) => (
             <div key={i} className="flex gap-1">
               {row.map((btn: any, j: number) => (
-                <div key={j} className="flex-1 text-center bg-[#333] text-[9px] py-1 rounded text-gray-300 truncate px-1" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
+                <div key={j} className="flex-1 relative text-center bg-[#333] text-[9px] py-1 rounded text-gray-300 truncate px-1" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
                   {btn.text}
+                  {btn.type !== 'url' && (
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={`btn_${i}_${j}`}
+                      className="w-3 h-3 bg-white border-2 border-blue-500"
+                      style={{ right: -6, top: '50%', transform: 'translateY(-50%)' }}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -124,7 +133,7 @@ const MessageNode = ({ data }: { data: any }) => (
         </div>
       )}
     </div>
-    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
+    <Handle type="source" position={Position.Bottom} id="main" className="w-3 h-3 bg-blue-500" />
     {/* Timeout Handle */}
     {data.timeout > 0 && (
       <Handle 
@@ -188,15 +197,15 @@ const ConditionNode = ({ data }: { data: any }) => (
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-orange-500" />
     <div className="bg-orange-500/10 p-2 rounded-t-xl border-b border-orange-500/20 flex items-center gap-2">
       <AlertCircle size={14} className="text-orange-400" />
-      <span className="text-xs font-bold text-orange-100">{data.label || 'Условие'}</span>
+      <span className="text-xs font-bold text-orange-100">{data.label || 'Проверка подписки'}</span>
     </div>
     <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
       <div className="truncate text-orange-300 font-mono text-[10px] bg-orange-500/10 p-1.5 rounded text-center">
         {data.groupUsername ? `Подписка на ${data.groupUsername}` : 'Группа не указана'}
       </div>
       <div className="flex justify-between mt-2 px-2">
-        <span className="text-[10px] text-green-400">Да</span>
-        <span className="text-[10px] text-red-400">Нет</span>
+        <span className="text-[10px] text-green-400 font-bold">Да</span>
+        <span className="text-[10px] text-red-400 font-bold">Нет</span>
       </div>
     </div>
     <Handle type="source" position={Position.Bottom} id="true" className="w-3 h-3 bg-green-500" style={{ left: '25%' }} />
@@ -290,7 +299,15 @@ export default function BotScenarios() {
             };
           });
           setNodes(updatedNodes);
-          setEdges(deserializeFromFirestore(data.edges || initialEdges));
+          const loadedEdges = deserializeFromFirestore(data.edges || initialEdges);
+          const updatedEdges = loadedEdges.map((e: any) => {
+            const sourceNode = updatedNodes.find((n: any) => n.id === e.source);
+            if (sourceNode && sourceNode.type === 'message' && !e.sourceHandle) {
+              return { ...e, sourceHandle: 'main' };
+            }
+            return e;
+          });
+          setEdges(updatedEdges);
           setBotActive(data.isActive || false);
         } else {
           setNodes(initialNodes);
@@ -441,7 +458,7 @@ export default function BotScenarios() {
       id: `node_${Date.now()}`,
       type: type,
       data: { 
-        label: type === 'message' ? 'Сообщение' : type === 'trigger' ? 'Вход по ссылке' : type === 'command' ? 'Команда' : 'Условие',
+        label: type === 'message' ? 'Сообщение' : type === 'trigger' ? 'Вход по ссылке' : type === 'command' ? 'Команда' : 'Проверка подписки',
         type,
         text: '',
         mediaUrl: '',
@@ -590,8 +607,8 @@ export default function BotScenarios() {
               <button onClick={() => addNode('message')} className="p-2 hover:bg-[#333] rounded-lg text-blue-400 flex items-center gap-2 text-sm" title="Добавить сообщение">
                 <MessageSquare size={16} /> Сообщение
               </button>
-              <button onClick={() => addNode('condition')} className="p-2 hover:bg-[#333] rounded-lg text-orange-400 flex items-center gap-2 text-sm" title="Добавить условие (подписка)">
-                <AlertCircle size={16} /> Условие
+              <button onClick={() => addNode('condition')} className="p-2 hover:bg-[#333] rounded-lg text-orange-400 flex items-center gap-2 text-sm" title="Добавить проверку подписки">
+                <AlertCircle size={16} /> Подписка
               </button>
             </Panel>
           </ReactFlow>

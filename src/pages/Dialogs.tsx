@@ -611,8 +611,8 @@ export default function Dialogs() {
       const scheduledData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
-      setScheduledMessages(scheduledData.sort((a, b) => b.scheduledAt?.toMillis() - a.scheduledAt?.toMillis()));
+      })) as any[];
+      setScheduledMessages(scheduledData.sort((a, b) => (b.scheduledAt?.toMillis() || 0) - (a.scheduledAt?.toMillis() || 0)));
     });
     return () => unsubscribe();
   }, [currentUser]);
@@ -829,12 +829,20 @@ export default function Dialogs() {
               <div className="flex gap-3">
                 <div className="relative shrink-0">
                   {chat.avatar ? (
-                    <img src={chat.avatar} alt={chat.username} className="w-12 h-12 rounded-full object-cover bg-[#2a2a2a]" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-400 font-bold text-lg">
-                      {(chat.customName || chat.displayName || chat.username || '?')[0].toUpperCase()}
-                    </div>
-                  )}
+                    <img 
+                      src={chat.avatar} 
+                      alt={chat.username} 
+                      className="w-12 h-12 rounded-full object-cover bg-[#2a2a2a]" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <div className={`w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-400 font-bold text-lg ${chat.avatar ? 'hidden' : ''}`}>
+                    {(chat.customName || chat.displayName || chat.username || '?')[0].toUpperCase()}
+                  </div>
                   <div className="absolute -bottom-1 -right-1 bg-[#111] rounded-full p-0.5">
                      {chat.platform === 'tg' && <div className="bg-cyan-500/20 text-cyan-400 p-0.5 rounded-full"><Send size={10} /></div>}
                      {chat.platform === 'vk' && <div className="bg-blue-500/20 text-blue-400 p-0.5 rounded-full text-[8px] font-bold px-1">VK</div>}
@@ -900,12 +908,19 @@ export default function Dialogs() {
               onClick={() => setProfileModalOpen(true)}
             >
               {selectedChat.avatar ? (
-                <img src={selectedChat.avatar} className="w-10 h-10 rounded-full object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center text-white font-bold">
-                  {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
-                </div>
-              )}
+                <img 
+                  src={selectedChat.avatar} 
+                  className="w-10 h-10 rounded-full object-cover" 
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`w-10 h-10 rounded-full bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center text-white font-bold ${selectedChat.avatar ? 'hidden' : ''}`}>
+                {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
+              </div>
               <div>
                 <div className="font-bold text-gray-100 text-sm flex items-center gap-2">
                   {selectedChat.customName || selectedChat.displayName || selectedChat.username}
@@ -937,6 +952,13 @@ export default function Dialogs() {
                 title="Очистить историю"
               >
                 <Trash2 size={18} />
+              </button>
+              <button 
+                onClick={(e) => handleDeleteChat(e, selectedChatId)}
+                className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                title="Удалить пользователя из списка диалогов"
+              >
+                <User size={18} className="text-red-400" />
               </button>
               <button 
                 onClick={() => setProfileModalOpen(true)}
@@ -1595,12 +1617,19 @@ export default function Dialogs() {
                   <div className="flex flex-col items-center mb-8">
                     <div className="w-24 h-24 rounded-full bg-[#1a1a1a] mb-4 overflow-hidden border-2 border-purple-500/20">
                       {selectedChat.avatar ? (
-                        <img src={selectedChat.avatar} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-gray-500">
-                          {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
-                        </div>
-                      )}
+                        <img 
+                          src={selectedChat.avatar} 
+                          className="w-full h-full object-cover" 
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`w-full h-full flex items-center justify-center text-3xl font-bold text-gray-500 ${selectedChat.avatar ? 'hidden' : ''}`}>
+                        {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
+                      </div>
                     </div>
                     
                     {isRenaming ? (

@@ -294,7 +294,7 @@ export default function EventCalendar() {
               </button>
             </div>
             
-            <div className="mt-2 flex flex-col gap-1 overflow-y-auto max-h-[70px] custom-scrollbar">
+            <div className="mt-2 flex flex-col gap-1">
               {dayEvents.map(event => (
                 <div 
                   key={event.id}

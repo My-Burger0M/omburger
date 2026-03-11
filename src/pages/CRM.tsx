@@ -284,21 +284,87 @@ export default function CRM() {
                 <h3 className="text-sm font-medium text-gray-400 mb-4">Информация</h3>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Первое касание:</span>
-                    <span className="text-white">
-                      {selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                    <span className="text-gray-500">Первое касание (не стирается):</span>
+                    <span className="text-white font-medium">
+                      {selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">Последняя активность:</span>
                     <span className="text-white">
-                      {selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000).toLocaleDateString() : '-'}
+                      {selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Сообщений:</span>
-                    <span className="text-white">{selectedUser.messageCount || 0}</span>
+                    <span className="text-gray-500">Всего сообщений:</span>
+                    <span className="text-white font-bold">{selectedUser.messageCount || 0}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Платформа:</span>
+                    <span className="text-white uppercase">{selectedUser.platform || 'TG'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#222] p-4 rounded-xl border border-white/5 mt-4">
+                <h3 className="text-sm font-medium text-gray-400 mb-4">Статистика активности</h3>
+                <div className="space-y-4">
+                  {(() => {
+                    const createdDate = selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000) : new Date();
+                    const lastActiveDate = selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date();
+                    const now = new Date();
+                    
+                    const daysSinceStart = Math.max(1, Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
+                    const daysSinceLastActive = Math.floor((now.getTime() - lastActiveDate.getTime()) / (1000 * 60 * 60 * 24));
+                    
+                    const totalMsgs = selectedUser.messageCount || 0;
+                    const msgsPerDay = totalMsgs / daysSinceStart;
+                    const msgsPerWeek = msgsPerDay * 7;
+                    const msgsPerMonth = msgsPerDay * 30;
+
+                    // Calculate a rough "activity percentage" based on recency and frequency
+                    let activityPercent = 0;
+                    if (totalMsgs > 0) {
+                      const recencyScore = Math.max(0, 100 - (daysSinceLastActive * 5)); // Drops by 5% each day inactive
+                      const frequencyScore = Math.min(100, msgsPerWeek * 10); // 10 msgs/week = 100%
+                      activityPercent = Math.round((recencyScore * 0.6) + (frequencyScore * 0.4));
+                    }
+
+                    return (
+                      <>
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-gray-400">Индекс активности</span>
+                            <span className={activityPercent > 70 ? 'text-green-400' : activityPercent > 30 ? 'text-yellow-400' : 'text-red-400'}>
+                              {activityPercent}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-black/50 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${activityPercent > 70 ? 'bg-green-500' : activityPercent > 30 ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                              style={{ width: `${activityPercent}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="bg-black/20 p-3 rounded-lg border border-white/5">
+                            <div className="text-gray-500 text-xs mb-1">В среднем за неделю</div>
+                            <div className="text-white font-medium">{msgsPerWeek.toFixed(1)} сообщ.</div>
+                          </div>
+                          <div className="bg-black/20 p-3 rounded-lg border border-white/5">
+                            <div className="text-gray-500 text-xs mb-1">В среднем за месяц</div>
+                            <div className="text-white font-medium">{msgsPerMonth.toFixed(1)} сообщ.</div>
+                          </div>
+                        </div>
+                        
+                        <div className="text-xs text-gray-500 mt-2 bg-blue-500/10 p-2 rounded border border-blue-500/20">
+                          Пользователь с нами уже <span className="text-blue-400 font-bold">{daysSinceStart}</span> дней. 
+                          {daysSinceLastActive === 0 ? ' Был активен сегодня.' : ` Не проявлял активность ${daysSinceLastActive} дней.`}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

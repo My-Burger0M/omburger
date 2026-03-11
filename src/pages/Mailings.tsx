@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, serverTimestamp, query, where, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, where, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2, Upload } from 'lucide-react';
@@ -439,10 +439,20 @@ export default function Mailings() {
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center overflow-hidden">
                         {user.avatar ? (
-                          <img src={user.avatar} alt={user.username} className="w-full h-full object-cover" />
-                        ) : (
+                          <img 
+                            src={user.avatar} 
+                            alt={user.username} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                        ) : null}
+                        <div className={`w-full h-full flex items-center justify-center ${user.avatar ? 'hidden' : ''}`}>
                           <Users size={20} className="text-purple-400" />
-                        )}
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium text-white">{user.displayName || user.username}</div>

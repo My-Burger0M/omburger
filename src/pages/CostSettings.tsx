@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Copy, Trash2, Save, X, ChevronLeft } from 'lucide-react';
-import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -134,6 +134,18 @@ export default function CostSettings() {
       if (currentSetting.id) {
         // Update
         await updateDoc(doc(db, 'users', currentUser.uid, 'cost_settings', currentSetting.id), settingData);
+        
+        // Update all products that use this cost setting
+        const productsQuery = query(collection(db, 'users', currentUser.uid, 'products'), where('costSettingId', '==', currentSetting.id));
+        const productsSnapshot = await getDocs(productsQuery);
+        
+        if (!productsSnapshot.empty) {
+          const batch = writeBatch(db);
+          productsSnapshot.docs.forEach(productDoc => {
+            batch.update(productDoc.ref, { costPrice: totalCost });
+          });
+          await batch.commit();
+        }
       } else {
         // Create
         await addDoc(collection(db, 'users', currentUser.uid, 'cost_settings'), {
