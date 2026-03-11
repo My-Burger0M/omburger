@@ -128,10 +128,12 @@ async function startServer() {
                 } catch (e) { console.error('Error fetching VK user info:', e); }
                 
                 console.log(`Received VK message from ${username}: ${text}`);
-                await saveMessage('vk', chatId, text, username, messageId);
+                const saved = await saveMessage('vk', chatId, text, username, messageId);
                 
-                const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
-                await processScenario('vk', chatId, text, payload, userDoc.id);
+                if (saved) {
+                  const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
+                  await processScenario('vk', chatId, text, payload, userDoc.id);
+                }
               });
 
               vk.updates.on('message_event', async (context) => {
@@ -146,8 +148,10 @@ async function startServer() {
                 const text = payload?.cmd || payload?.command || JSON.stringify(payload) || 'Button clicked';
                 
                 console.log(`Received VK message_event from ${username}: ${text}`);
-                await saveMessage('vk', chatId, `[Кнопка] ${text}`, username);
-                await processScenario('vk', chatId, text, null, userDoc.id);
+                const saved = await saveMessage('vk', chatId, `[Кнопка] ${text}`, username);
+                if (saved) {
+                  await processScenario('vk', chatId, text, null, userDoc.id);
+                }
                 
                 try {
                   await context.answer({ type: 'show_snackbar', text: '✅' });
@@ -208,8 +212,10 @@ async function startServer() {
               const tgUsername = user.username ? `@${user.username}` : '';
               const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
               
-              await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
-              await processScenario('tg', chatId, '/start', payload, userDoc.id);
+              const saved = await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
+              if (saved) {
+                await processScenario('tg', chatId, '/start', payload, userDoc.id);
+              }
             });
 
             tgBot.command('stats', async (ctx) => {
@@ -337,8 +343,10 @@ async function startServer() {
               }
 
               console.log(`Received TG message from ${username}: ${text}`);
-              await saveMessage('tg', chatId, text, username, messageId, avatar, displayName, mediaUrl, mediaType);
-              await processScenario('tg', chatId, text, null, userDoc.id);
+              const saved = await saveMessage('tg', chatId, text, username, messageId, avatar, displayName, mediaUrl, mediaType);
+              if (saved) {
+                await processScenario('tg', chatId, text, null, userDoc.id);
+              }
             });
 
             tgBot.on('callback_query', async (ctx) => {
@@ -358,8 +366,10 @@ async function startServer() {
               }
 
               console.log(`Received TG callback_query from ${displayName}: ${text}`);
-              await saveMessage('tg', chatId, `[Кнопка] ${text}`, displayName);
-              await processScenario('tg', chatId, text, null, userDoc.id);
+              const saved = await saveMessage('tg', chatId, `[Кнопка] ${text}`, displayName);
+              if (saved) {
+                await processScenario('tg', chatId, text, null, userDoc.id);
+              }
               
               try {
                 await ctx.answerCbQuery();
@@ -669,17 +679,21 @@ async function startServer() {
           console.error('Error sending scenario message:', e);
         }
 
-        if (node.data.timeout > 0) {
-          const timeoutMinutes = node.data.timeout;
-          const timeoutAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
+        const mainEdge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom' || e.sourceHandle === 'main'));
+        const buttonEdges = edges.filter(e => e.source === currentNodeId && e.sourceHandle && e.sourceHandle.startsWith('btn_'));
+        
+        const shouldPause = node.data.timeout > 0 || buttonEdges.length > 0;
+
+        if (shouldPause) {
+          const timeoutMinutes = node.data.timeout || 0;
+          const timeoutAt = timeoutMinutes > 0 ? new Date(Date.now() + timeoutMinutes * 60 * 1000) : null;
           
           const timeoutEdge = edges.find(e => e.source === currentNodeId && e.sourceHandle === 'timeout');
-          const replyEdge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom'));
 
           await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
             'scenarioState.active': true,
             'scenarioState.nodeId': currentNodeId,
-            'scenarioState.replyNodeId': replyEdge ? replyEdge.target : null,
+            'scenarioState.replyNodeId': mainEdge ? mainEdge.target : null,
             'scenarioState.timeoutNodeId': timeoutEdge ? timeoutEdge.target : null,
             'scenarioState.timeoutAt': timeoutAt,
             'scenarioState.userId': userId
@@ -695,6 +709,7 @@ async function startServer() {
       } else if (node.type === 'condition') {
         const { groupUsername } = node.data;
         let isSubscribed = false;
+        let checkError = null;
         
         try {
           const userDocRef = doc(db, 'users', userId);
@@ -724,9 +739,19 @@ async function startServer() {
             const isMember = await vkApi.api.groups.isMember({ group_id: groupId, user_id: parseInt(chatId) });
             isSubscribed = isMember === 1;
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('Error checking subscription:', e);
-          // Default to false on error
+          checkError = e.message || String(e);
+        }
+        
+        if (checkError) {
+          try {
+            await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+              scenarioError: `Ошибка проверки подписки: ${checkError}`
+            });
+          } catch (e) {
+            console.error('Failed to save scenarioError:', e);
+          }
         }
         
         const trueEdge = edges.find(e => e.source === currentNodeId && e.sourceHandle === 'true');
@@ -737,7 +762,7 @@ async function startServer() {
       }
 
       // Find next node
-      const edge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom'));
+      const edge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom' || e.sourceHandle === 'main'));
       currentNodeId = edge ? edge.target : null;
     }
   };
@@ -802,14 +827,50 @@ async function startServer() {
       const edges = deserializeFromFirestore(scenario.edges || []);
 
       // Check if waiting for message
-      if (chatData.scenarioState?.active && !payload && text !== '/start') {
-        const replyNodeId = chatData.scenarioState.replyNodeId;
+      if (chatData.scenarioState?.active && !text.startsWith('/start')) {
+        const currentNodeId = chatData.scenarioState.nodeId;
+        const currentNode = nodes.find((n: any) => n.id === currentNodeId);
+        
+        let nextNodeId = null;
+        
+        if (currentNode && currentNode.type === 'message') {
+          // Check if the text matches any button's callback_data or text
+          let matchedButtonEdge = null;
+          if (currentNode.data.keyboard) {
+            for (let i = 0; i < currentNode.data.keyboard.length; i++) {
+              for (let j = 0; j < currentNode.data.keyboard[i].length; j++) {
+                const btn = currentNode.data.keyboard[i][j];
+                if (btn.callback_data === text || btn.text === text) {
+                  // Found the button!
+                  const edge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === `btn_${i}_${j}`);
+                  if (edge) {
+                    matchedButtonEdge = edge;
+                  }
+                  break;
+                }
+              }
+              if (matchedButtonEdge) break;
+            }
+          }
+          
+          if (matchedButtonEdge) {
+            nextNodeId = matchedButtonEdge.target;
+          } else {
+            // Fallback to main edge
+            nextNodeId = chatData.scenarioState.replyNodeId;
+          }
+        } else {
+          // Not a message node, just use replyNodeId
+          nextNodeId = chatData.scenarioState.replyNodeId;
+        }
+        
         // Clear state
         await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
           'scenarioState.active': false
         });
-        if (replyNodeId) {
-          await runFlow(userId, platform, chatId, replyNodeId, nodes, edges);
+        
+        if (nextNodeId) {
+          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
         }
         return; // Done processing this message
       }
@@ -858,17 +919,30 @@ async function startServer() {
     }
   };
 
+  // Memory cache to prevent race conditions from Webhook + Long Polling
+  const processedMessageIds = new Set<string>();
+
   // Helper to save message
-  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string, messageId?: string, avatar?: string, displayName?: string, mediaUrl?: string, mediaType?: string) => {
+  const saveMessage = async (platform: 'tg' | 'vk' | 'max', chatId: string, text: string, username: string, messageId?: string, avatar?: string, displayName?: string, mediaUrl?: string, mediaType?: string): Promise<boolean> => {
     try {
-      const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
+      const msgDocId = messageId ? `${platform}_${chatId}_${messageId}` : undefined;
       
-      // Check for duplicates if messageId is provided
-      if (messageId) {
-        // ... (existing comments)
+      // Memory cache check (fastest, prevents race conditions)
+      if (msgDocId) {
+        if (processedMessageIds.has(msgDocId)) {
+          console.log(`Duplicate message ignored (memory cache): ${msgDocId}`);
+          return false;
+        }
+        processedMessageIds.add(msgDocId);
+        // Keep cache from growing indefinitely
+        if (processedMessageIds.size > 10000) {
+          const iterator = processedMessageIds.values();
+          for (let i = 0; i < 1000; i++) processedMessageIds.delete(iterator.next().value);
+        }
       }
 
-      const msgDocId = messageId ? `${platform}_${chatId}_${messageId}` : undefined;
+      const chatRef = doc(db, 'chats', `${platform}_${chatId}`);
+      
       const msgRef = msgDocId 
         ? doc(db, 'chats', `${platform}_${chatId}`, 'messages', msgDocId)
         : doc(collection(db, 'chats', `${platform}_${chatId}`, 'messages')); // Auto-ID if no messageId
@@ -877,8 +951,8 @@ async function startServer() {
       if (msgDocId) {
          const existingDoc = await getDoc(msgRef);
          if (existingDoc.exists()) {
-             console.log(`Duplicate message ignored: ${msgDocId}`);
-             return;
+             console.log(`Duplicate message ignored (firestore): ${msgDocId}`);
+             return false;
          }
       }
 
@@ -926,8 +1000,10 @@ async function startServer() {
 
       await updateStats(platform, chatId);
       console.log(`Message saved from ${platform} user ${username}`);
+      return true;
     } catch (error) {
       console.error('Error saving message:', error);
+      return false;
     }
   };
 
@@ -987,10 +1063,35 @@ async function startServer() {
         if (!tokens?.vk) throw new Error('VK token not configured');
         
         let messageText = text || '';
-        if (mediaUrl && !mediaUrl.startsWith('data:')) {
-          messageText += `\n\n${mediaUrl}`;
-        } else if (mediaUrl && mediaUrl.startsWith('data:')) {
-          messageText += `\n\n[Медиафайл прикреплен]`;
+        let attachment = undefined;
+        
+        // Try to upload media if present
+        if (mediaUrl) {
+          try {
+            const vkApi = vk || new VK({ token: tokens.vk });
+            if (mediaType === 'photo' || mediaUrl.match(/\.(jpg|jpeg|png|gif)$/i)) {
+              const photo = await vkApi.upload.messagePhoto({
+                source: { value: mediaUrl },
+                peer_id: Number(chatId)
+              });
+              attachment = photo.toString();
+            } else {
+              // For video or other types, try document upload
+              const doc = await vkApi.upload.messageDocument({
+                source: { value: mediaUrl },
+                peer_id: Number(chatId)
+              });
+              attachment = doc.toString();
+            }
+          } catch (e) {
+            console.error('VK Media Upload Error:', e);
+            // Fallback to text link
+            if (!mediaUrl.startsWith('data:')) {
+              messageText += `\n\n${mediaUrl}`;
+            } else {
+              messageText += `\n\n[Медиафайл прикреплен]`;
+            }
+          }
         }
 
         const params: any = {
@@ -998,6 +1099,10 @@ async function startServer() {
             message: messageText,
             random_id: Math.floor(Math.random() * 1000000)
         };
+        
+        if (attachment) {
+          params.attachment = attachment;
+        }
 
         if (keyboard && keyboard.inline_keyboard) {
           const vkButtons = keyboard.inline_keyboard.map((row: any[]) => 

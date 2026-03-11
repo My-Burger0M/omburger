@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, MoreVertical, Send, Paperclip, Smile, Mic, MessageCircle, 
   Trash2, Image as ImageIcon, Video, X, Plus, ExternalLink, User,
-  MoreHorizontal, Check, CheckCheck, PlayCircle, StickyNote, Edit2, Save, FileText, Upload, Clock, Calendar
+  MoreHorizontal, Check, CheckCheck, PlayCircle, StickyNote, Edit2, Save, FileText, Upload, Clock, Calendar, AlertCircle
 } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, setDoc, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch, setDoc, where, deleteField } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,6 +39,7 @@ interface Chat {
   unreadCount: number;
   tags?: string[];
   tagColors?: Record<string, string>;
+  scenarioError?: string;
 }
 
 interface Message {
@@ -968,6 +969,29 @@ export default function Dialogs() {
               </button>
             </div>
           </div>
+
+          {selectedChat.scenarioError && (
+            <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-red-400 text-sm">
+                <AlertCircle size={16} />
+                <span>{selectedChat.scenarioError}</span>
+              </div>
+              <button 
+                onClick={async () => {
+                  try {
+                    await updateDoc(doc(db, 'chats', selectedChat.id), {
+                      scenarioError: deleteField()
+                    });
+                  } catch (e) {
+                    console.error('Error clearing scenario error:', e);
+                  }
+                }}
+                className="text-xs text-red-400 hover:text-red-300 underline"
+              >
+                Скрыть
+              </button>
+            </div>
+          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
