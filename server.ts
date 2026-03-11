@@ -842,7 +842,7 @@ async function startServer() {
                 const btn = currentNode.data.keyboard[i][j];
                 if (btn.callback_data === text || btn.text === text) {
                   // Found the button!
-                  const edge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === `btn_${i}_${j}`);
+                  const edge = edges.find((e: any) => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
                   if (edge) {
                     matchedButtonEdge = edge;
                   }

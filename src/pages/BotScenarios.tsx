@@ -86,7 +86,7 @@ const StartNode = ({ data }: { data: any }) => (
 );
 
 const MessageNode = ({ data }: { data: any }) => (
-  <div className="bg-[#1a1a1a] border border-blue-500/50 rounded-xl min-w-[224px] shadow-lg shadow-blue-900/20 relative pb-10">
+  <div className="bg-[#1a1a1a] border border-blue-500/50 rounded-xl w-56 shadow-lg shadow-blue-900/20 relative">
     <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
     <div className="bg-blue-500/10 p-2 rounded-t-xl border-b border-blue-500/20 flex items-center justify-between">
       <div className="flex items-center gap-2">
@@ -111,27 +111,19 @@ const MessageNode = ({ data }: { data: any }) => (
       )}
       <div className="truncate">{data.text || 'Нет текста...'}</div>
       {data.keyboard && data.keyboard.length > 0 && (
-        <div className="flex flex-col gap-2 mt-1">
+        <div className="flex flex-col gap-1 mt-1">
           {data.keyboard.map((row: any[], i: number) => (
-            <div key={i} className="flex flex-wrap gap-1">
+            <div key={i} className="flex gap-1">
               {row.map((btn: any, j: number) => (
-                <div key={j} className="relative flex-1 min-w-[40px] mb-2">
-                  <div className="text-center bg-[#333] text-[10px] py-1.5 px-1 rounded text-gray-300 truncate cursor-pointer hover:bg-[#444] mb-4" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
-                    {btn.text}
-                  </div>
+                <div key={j} className="flex-1 relative text-center bg-[#333] text-[9px] py-1 rounded text-gray-300 truncate px-1" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
+                  {btn.text}
                   {btn.type !== 'url' && (
                     <Handle
                       type="source"
                       position={Position.Bottom}
-                      id={`btn_${i}_${j}`}
-                      className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full z-[100]"
-                      style={{ 
-                        left: '50%', 
-                        bottom: '0px', 
-                        transform: 'translateX(-50%)',
-                        pointerEvents: 'all',
-                        position: 'absolute'
-                      }}
+                      id={btn.id || `btn_${i}_${j}`}
+                      className="w-3 h-3 bg-white border-2 border-blue-500"
+                      style={{ left: '50%', transform: 'translateX(-50%)' }}
                     />
                   )}
                 </div>
@@ -141,7 +133,7 @@ const MessageNode = ({ data }: { data: any }) => (
         </div>
       )}
     </div>
-    <Handle type="source" position={Position.Bottom} id="main" className="w-3 h-3 bg-blue-500" style={{ left: '10%', bottom: '-6px' }} />
+    <Handle type="source" position={Position.Bottom} id="main" className="w-3 h-3 bg-blue-500" />
     {/* Timeout Handle */}
     {data.timeout > 0 && (
       <Handle 
@@ -861,7 +853,8 @@ export default function BotScenarios() {
                           <button 
                             onClick={() => {
                               const newKb = [...(selectedNode.data.keyboard as any[][])];
-                              newKb[rIndex].push({ text: 'Новая', type: 'callback', callback_data: 'cmd' });
+                              const newId = Date.now().toString() + Math.random().toString(36).substring(2);
+newKb[rIndex].push({ text: 'Новая', type: 'callback', callback_data: newId, id: newId });
                               updateNodeData('keyboard', newKb);
                             }}
                             className="text-[10px] text-blue-400 hover:text-blue-300 mt-1 text-center border border-dashed border-blue-500/30 rounded py-1"
@@ -875,7 +868,8 @@ export default function BotScenarios() {
                     <button 
                       onClick={() => {
                         const currentKb = (selectedNode.data.keyboard as any[][]) || [];
-                        updateNodeData('keyboard', [...currentKb, [{ text: 'Новая кнопка', type: 'callback', callback_data: 'cmd_1' }]]);
+                        const newId = Date.now().toString() + Math.random().toString(36).substring(2);
+                        updateNodeData('keyboard', [...currentKb, [{ text: 'Новая кнопка', type: 'callback', callback_data: newId, id: newId }]]);
                       }}
                       className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-1"
                     >
