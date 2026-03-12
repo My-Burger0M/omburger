@@ -797,7 +797,7 @@ async function startServer() {
       } else if (node.type === 'command') {
         // Command node acts as a pass-through when reached via flow (e.g. from a Trigger node)
       } else if (node.type === 'condition') {
-        const { groupUsername } = node.data;
+        const { groupUsername, tgGroupUsername, vkGroupUsername } = node.data;
         let isSubscribed = false;
         let checkError = null;
         
@@ -806,10 +806,13 @@ async function startServer() {
           const userDocSnap = await getDoc(userDocRef);
           const tokens = userDocSnap.data()?.tokens || {};
           
-          if (platform === 'tg' && tokens.tg && groupUsername) {
+          const tgGroup = tgGroupUsername || groupUsername;
+          const vkGroup = vkGroupUsername || groupUsername;
+
+          if (platform === 'tg' && tokens.tg && tgGroup) {
             const bot = new Telegraf(tokens.tg);
             // Extract username from URL if necessary
-            let targetChat = groupUsername;
+            let targetChat = tgGroup;
             if (targetChat.includes('t.me/')) {
               targetChat = targetChat.split('t.me/')[1];
             }
@@ -819,10 +822,10 @@ async function startServer() {
             }
             const member = await bot.telegram.getChatMember(targetChat, Number(chatId));
             isSubscribed = ['creator', 'administrator', 'member'].includes(member.status);
-          } else if (platform === 'vk' && tokens.vk && groupUsername) {
+          } else if (platform === 'vk' && tokens.vk && vkGroup) {
             const vkApi = new VK({ token: tokens.vk });
             // Extract group ID from username or URL
-            let groupId = groupUsername;
+            let groupId = vkGroup;
             if (groupId.includes('vk.com/')) {
               groupId = groupId.split('vk.com/')[1];
             }
@@ -916,22 +919,23 @@ async function startServer() {
       const nodes = deserializeFromFirestore(scenario.nodes || []);
       const edges = deserializeFromFirestore(scenario.edges || []);
 
-      // Check if waiting for message
-      if (chatData.scenarioState?.active && !text.startsWith('/start')) {
+      // Check if waiting for message or if it's a button click
+      let isButtonClick = false;
+      let matchedButtonEdge = null;
+      let nextNodeId = null;
+
+      if (chatData.scenarioState?.active) {
         const currentNodeId = chatData.scenarioState.nodeId;
         const currentNode = nodes.find((n: any) => n.id === currentNodeId);
         
-        let nextNodeId = null;
-        
         if (currentNode && currentNode.type === 'message') {
           // Check if the text matches any button's callback_data or text
-          let matchedButtonEdge = null;
           if (currentNode.data.keyboard) {
             for (let i = 0; i < currentNode.data.keyboard.length; i++) {
               for (let j = 0; j < currentNode.data.keyboard[i].length; j++) {
                 const btn = currentNode.data.keyboard[i][j];
-                if (btn.callback_data === text || btn.text === text) {
-                  // Found the button!
+                if (btn.callback_data === text || btn.text === text || btn.id === text) {
+                  isButtonClick = true;
                   const edge = edges.find((e: any) => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
                   if (edge) {
                     matchedButtonEdge = edge;
@@ -939,30 +943,32 @@ async function startServer() {
                   break;
                 }
               }
-              if (matchedButtonEdge) break;
+              if (isButtonClick) break;
             }
           }
           
-          if (matchedButtonEdge) {
-            nextNodeId = matchedButtonEdge.target;
-          } else {
-            // Fallback to main edge
+          if (isButtonClick) {
+            nextNodeId = matchedButtonEdge ? matchedButtonEdge.target : null;
+          } else if (!text.startsWith('/start')) {
+            // Fallback to main edge if not a button click and not a start command
             nextNodeId = chatData.scenarioState.replyNodeId;
           }
-        } else {
+        } else if (!text.startsWith('/start')) {
           // Not a message node, just use replyNodeId
           nextNodeId = chatData.scenarioState.replyNodeId;
         }
         
-        // Clear state
-        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
-          'scenarioState.active': false
-        });
-        
-        if (nextNodeId) {
-          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
+        if (isButtonClick || !text.startsWith('/start')) {
+          // Clear state
+          await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+            'scenarioState.active': false
+          });
+          
+          if (nextNodeId) {
+            await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
+          }
+          return; // Done processing this message
         }
-        return; // Done processing this message
       }
 
       let startNodeId = null;

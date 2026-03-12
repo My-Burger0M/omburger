@@ -117,8 +117,8 @@ export default function Products() {
 
   const handleAddProduct = async () => {
     if (!currentUser) return;
-    if (!newProduct.name || (!newProduct.costPrice && !newProduct.costSettingId)) {
-      alert('Пожалуйста, заполните обязательные поля (Название, Себестоимость)');
+    if (!newProduct.name || !newProduct.costSettingId) {
+      alert('Пожалуйста, заполните обязательные поля (Название, Список стоимости)');
       return;
     }
 
@@ -130,18 +130,17 @@ export default function Products() {
         finalImageUrl = await resizeImage(selectedFile, 1200, 1600);
       }
 
-      let costPrice = Number(newProduct.costPrice);
-      if (newProduct.costSettingId) {
-        const setting = costSettings.find(s => s.id === newProduct.costSettingId);
-        if (setting) {
-          costPrice = setting.totalCost;
-        }
+      const setting = costSettings.find(s => s.id === newProduct.costSettingId);
+      if (!setting) {
+        alert('Выбранный список стоимости не найден');
+        return;
       }
+      const costPrice = setting.totalCost;
 
       await addDoc(collection(db, 'users', currentUser.uid, 'products'), {
         name: newProduct.name,
         costPrice: costPrice,
-        costSettingId: newProduct.costSettingId || null,
+        costSettingId: newProduct.costSettingId,
         imageUrl: finalImageUrl,
         marketplace: newProduct.marketplace,
         apiWb: newProduct.apiWb,
@@ -395,7 +394,7 @@ export default function Products() {
                   }}
                   className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
                 >
-                  <option value="">-- Выберите из списка или введите вручную --</option>
+                  <option value="">-- Выберите из списка --</option>
                   {costSettings.map(setting => (
                     <option key={setting.id} value={setting.id}>
                       {setting.name} ({setting.totalCost.toFixed(2)} ₽)
@@ -403,19 +402,6 @@ export default function Products() {
                   ))}
                 </select>
               </div>
-
-              {!newProduct.costSettingId && (
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">Себестоимость вручную (₽)</label>
-                  <input 
-                    type="number" 
-                    value={newProduct.costPrice}
-                    onChange={(e) => setNewProduct({...newProduct, costPrice: e.target.value})}
-                    className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="0"
-                  />
-                </div>
-              )}
 
               <div>
                 <label className="block text-sm text-gray-400 mb-1">API продаж от WB</label>

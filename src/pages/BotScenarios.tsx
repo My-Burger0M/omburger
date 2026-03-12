@@ -215,8 +215,11 @@ const ConditionNode = ({ data }: { data: any }) => (
       <span className="text-xs font-bold text-orange-100">{data.label || 'Проверка подписки'}</span>
     </div>
     <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
-      <div className="truncate text-orange-300 font-mono text-[10px] bg-orange-500/10 p-1.5 rounded text-center">
-        {data.groupUsername ? `Подписка на ${data.groupUsername}` : 'Группа не указана'}
+      <div className="truncate text-blue-300 font-mono text-[10px] bg-blue-500/10 p-1.5 rounded text-center">
+        {data.tgGroupUsername ? `TG: ${data.tgGroupUsername}` : 'TG: Не указана'}
+      </div>
+      <div className="truncate text-blue-400 font-mono text-[10px] bg-blue-600/10 p-1.5 rounded text-center">
+        {data.vkGroupUsername ? `VK: ${data.vkGroupUsername}` : 'VK: Не указана'}
       </div>
       <div className="flex justify-between mt-2 px-2">
         <span className="text-[10px] text-green-400 font-bold">Да</span>
@@ -941,15 +944,26 @@ export default function BotScenarios() {
               {selectedNode.data.type === 'condition' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Ссылка на группу/канал</label>
+                    <label className="block text-xs text-gray-400 mb-1">Ссылка на группу/канал Telegram</label>
                     <input 
                       type="text" 
-                      value={selectedNode.data.groupUsername as string || ''}
-                      onChange={(e) => updateNodeData('groupUsername', e.target.value)}
+                      value={selectedNode.data.tgGroupUsername as string || ''}
+                      onChange={(e) => updateNodeData('tgGroupUsername', e.target.value)}
                       placeholder="https://t.me/om_esthetic"
-                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500 font-mono"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 font-mono"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">Например: https://t.me/om_esthetic или @om_esthetic. Бот должен быть администратором в этом канале.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Ссылка на группу ВКонтакте</label>
+                    <input 
+                      type="text" 
+                      value={selectedNode.data.vkGroupUsername as string || ''}
+                      onChange={(e) => updateNodeData('vkGroupUsername', e.target.value)}
+                      placeholder="https://vk.com/om_esthetic"
+                      className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 font-mono"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">Например: https://vk.com/om_esthetic или ID группы. Бот должен иметь доступ к группе.</p>
                   </div>
                 </div>
               )}

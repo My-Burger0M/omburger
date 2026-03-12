@@ -24,15 +24,19 @@ export default function MessageNode({ id, data }: NodeProps<MessageNodeData>) {
     data.onUpdate(id, { text: e.target.value });
   };
 
+  const generateId = () => {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  };
+
   const addRow = () => {
-    const newButtons = [...data.buttons, [{ id: crypto.randomUUID(), text: 'Новая кнопка' }]];
+    const newButtons = [...data.buttons, [{ id: generateId(), text: 'Новая кнопка' }]];
     data.onUpdate(id, { buttons: newButtons });
   };
 
   const addButton = (rowIndex: number) => {
     const newButtons = [...data.buttons];
     if (newButtons[rowIndex].length < 3) {
-      newButtons[rowIndex].push({ id: crypto.randomUUID(), text: 'Кнопка' });
+      newButtons[rowIndex].push({ id: generateId(), text: 'Кнопка' });
       data.onUpdate(id, { buttons: newButtons });
     }
   };

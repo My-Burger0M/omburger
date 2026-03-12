@@ -343,22 +343,24 @@ export default function CRM() {
                 <div className="space-y-4">
                   {(() => {
                     const createdDate = selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000) : (selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date());
-                    const lastActiveDate = selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date();
+                    const lastActiveDate = selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : null;
                     const now = new Date();
                     
                     const daysSinceStart = Math.max(1, Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
-                    const daysSinceLastActive = Math.floor((now.getTime() - lastActiveDate.getTime()) / (1000 * 60 * 60 * 24));
+                    const daysSinceLastActive = lastActiveDate ? Math.floor((now.getTime() - lastActiveDate.getTime()) / (1000 * 60 * 60 * 24)) : -1;
                     
                     const totalMsgs = selectedUser.messageCount || 0;
                     const msgsPerDay = totalMsgs / daysSinceStart;
-                    const msgsPerWeek = msgsPerDay * 7;
-                    const msgsPerMonth = msgsPerDay * 30;
+                    
+                    // Cap projections if user is new
+                    const msgsPerWeek = daysSinceStart >= 7 ? msgsPerDay * 7 : totalMsgs;
+                    const msgsPerMonth = daysSinceStart >= 30 ? msgsPerDay * 30 : totalMsgs;
 
                     // Calculate a rough "activity percentage" based on recency and frequency
                     let activityPercent = 0;
-                    if (totalMsgs > 0) {
+                    if (totalMsgs > 0 && lastActiveDate) {
                       const recencyScore = Math.max(0, 100 - (daysSinceLastActive * 5)); // Drops by 5% each day inactive
-                      const frequencyScore = Math.min(100, msgsPerWeek * 10); // 10 msgs/week = 100%
+                      const frequencyScore = Math.min(100, (msgsPerWeek / 10) * 100); // 10 msgs/week = 100%
                       activityPercent = Math.round((recencyScore * 0.6) + (frequencyScore * 0.4));
                     }
 
@@ -373,7 +375,7 @@ export default function CRM() {
                           </div>
                           <div className="w-full bg-black/50 rounded-full h-2">
                             <div 
-                              className={`h-2 rounded-full ${activityPercent > 70 ? 'bg-green-500' : activityPercent > 30 ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                              className={`h-2 rounded-full transition-all duration-500 ${activityPercent > 70 ? 'bg-green-500' : activityPercent > 30 ? 'bg-yellow-500' : 'bg-red-500'}`} 
                               style={{ width: `${activityPercent}%` }}
                             ></div>
                           </div>
@@ -392,7 +394,7 @@ export default function CRM() {
                         
                         <div className="text-xs text-gray-500 mt-2 bg-blue-500/10 p-2 rounded border border-blue-500/20">
                           Пользователь с нами уже <span className="text-blue-400 font-bold">{daysSinceStart}</span> дней. 
-                          {daysSinceLastActive === 0 ? ' Был активен сегодня.' : ` Не проявлял активность ${daysSinceLastActive} дней.`}
+                          {daysSinceLastActive === -1 ? ' Нет активности.' : daysSinceLastActive === 0 ? ' Был активен сегодня.' : ` Не проявлял активность ${daysSinceLastActive} дней.`}
                         </div>
                       </>
                     );
