@@ -59,6 +59,7 @@ export default function Mailings() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tg', 'vk']);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   
   const [messageText, setMessageText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
@@ -269,10 +270,38 @@ export default function Mailings() {
     return matchesSearch && matchesTags && matchesPlatform;
   });
 
+  const handleToggleUser = (userId: string) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUserIds.length === filteredUsers.length) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(filteredUsers.map(u => u.id));
+    }
+  };
+
+  // Update selected users when filters change
+  useEffect(() => {
+    const filteredIds = filteredUsers.map(u => u.id);
+    setSelectedUserIds(prev => prev.filter(id => filteredIds.includes(id)));
+  }, [searchQuery, selectedTags, selectedPlatforms, users]);
+
   const handleSendBroadcast = async () => {
-    if ((!messageText.trim() && !mediaUrl) || filteredUsers.length === 0 || !currentUser) return;
+    const usersToSend = filteredUsers.filter(u => selectedUserIds.includes(u.id));
     
-    if (!confirm(`Отправить сообщение ${filteredUsers.length} пользователям?`)) return;
+    if ((!messageText.trim() && !mediaUrl) || usersToSend.length === 0 || !currentUser) return;
+    
+    const platformsInSelected = new Set(usersToSend.map(u => u.platform));
+    if (platformsInSelected.size > 1) {
+      alert('Нельзя отправлять рассылку одновременно в Telegram и ВКонтакте из-за разного формата медиа. Пожалуйста, выберите пользователей только одной платформы.');
+      return;
+    }
+
+    if (!confirm(`Отправить сообщение ${usersToSend.length} пользователям?`)) return;
 
     setIsSending(true);
     try {
@@ -280,7 +309,7 @@ export default function Mailings() {
       let batch = writeBatch(db);
       let operationCount = 0;
 
-      for (const user of filteredUsers) {
+      for (const user of usersToSend) {
         const docRef = doc(collection(db, 'scheduled_messages'));
         batch.set(docRef, {
           userId: currentUser.uid,
@@ -434,10 +463,30 @@ export default function Mailings() {
               ) : filteredUsers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">Пользователи не найдены</div>
               ) : (
-                filteredUsers.map(user => (
-                  <div key={user.id} className="flex items-center justify-between p-4 bg-[#222] rounded-xl border border-white/5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center overflow-hidden">
+                <>
+                  <div className="flex items-center gap-3 p-3 bg-[#222] rounded-xl border border-white/5 mb-4">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
+                      onChange={handleSelectAll}
+                      className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-[#1a1a1a] cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-white">Выбрать всех ({filteredUsers.length})</span>
+                  </div>
+                  {filteredUsers.map(user => (
+                    <div 
+                      key={user.id} 
+                      className="flex items-center justify-between p-4 bg-[#222] rounded-xl border border-white/5 cursor-pointer hover:bg-[#2a2a2a] transition-colors"
+                      onClick={() => handleToggleUser(user.id)}
+                    >
+                      <div className="flex items-center gap-4">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedUserIds.includes(user.id)}
+                          onChange={() => {}} // Handled by parent div click
+                          className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-[#1a1a1a] cursor-pointer"
+                        />
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center overflow-hidden">
                         {user.avatar ? (
                           <img 
                             src={user.avatar} 
@@ -482,7 +531,8 @@ export default function Mailings() {
                       </div>
                     )}
                   </div>
-                ))
+                ))}
+                </>
               )}
             </div>
           </div>

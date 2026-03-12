@@ -869,7 +869,8 @@ export default function BotScenarios() {
                           <button 
                             onClick={() => {
                               const newKb = [...(selectedNode.data.keyboard as any[][])];
-                              newKb[rIndex].push({ id: crypto.randomUUID(), text: 'Новая', type: 'callback', callback_data: `cmd_${crypto.randomUUID().substring(0,6)}` });
+                              const randomId = Math.random().toString(36).substring(2, 9);
+                              newKb[rIndex].push({ id: randomId, text: 'Новая', type: 'callback', callback_data: `cmd_${randomId}` });
                               updateNodeData('keyboard', newKb);
                             }}
                             className="text-[10px] text-blue-400 hover:text-blue-300 mt-1 text-center border border-dashed border-blue-500/30 rounded py-1"
@@ -883,7 +884,8 @@ export default function BotScenarios() {
                     <button 
                       onClick={() => {
                         const currentKb = (selectedNode.data.keyboard as any[][]) || [];
-                        updateNodeData('keyboard', [...currentKb, [{ id: crypto.randomUUID(), text: 'Новая кнопка', type: 'callback', callback_data: `cmd_${crypto.randomUUID().substring(0,6)}` }]]);
+                        const randomId = Math.random().toString(36).substring(2, 9);
+                        updateNodeData('keyboard', [...currentKb, [{ id: randomId, text: 'Новая кнопка', type: 'callback', callback_data: `cmd_${randomId}` }]]);
                       }}
                       className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-1"
                     >

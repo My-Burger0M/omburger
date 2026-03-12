@@ -284,12 +284,9 @@ export default function Dialogs() {
         
         await updateDoc(doc(db, 'chats', selectedChatId), {
           lastMessage: '', // Clear last message text
-          // lastMessageAt: serverTimestamp() // DO NOT update timestamp to preserve active status? 
-          // Actually user said "written messages cleared everywhere... except active today".
-          // If I update timestamp, they become active NOW. If I don't, they stay active if they were.
-          // But if I clear history, `lastMessage` is gone.
+          lastMessageAt: null, // Clear last active time
           unreadCount: 0,
-          messageCount: 1
+          messageCount: 0
         });
       } catch (error) {
         console.error('Error clearing history:', error);

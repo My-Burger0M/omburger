@@ -183,7 +183,8 @@ async function startServer() {
                 }
 
                 console.log(`Received VK message_event from ${username}: ${text}`);
-                const saved = await saveMessage('vk', chatId, `[Кнопка] ${buttonText}`, username);
+                const eventId = context.eventId || `evt_${Date.now()}_${Math.random()}`;
+                const saved = await saveMessage('vk', chatId, `[Кнопка] ${buttonText}`, username, eventId);
                 if (saved) {
                   await processScenario('vk', chatId, text, null, userDoc.id);
                 }
@@ -431,7 +432,8 @@ async function startServer() {
               }
 
               console.log(`Received TG callback_query from ${displayName}: ${text}`);
-              const saved = await saveMessage('tg', chatId, `[Кнопка] ${buttonText}`, displayName);
+              const queryId = query.id || `cb_${Date.now()}_${Math.random()}`;
+              const saved = await saveMessage('tg', chatId, `[Кнопка] ${buttonText}`, displayName, queryId);
               if (saved) {
                 await processScenario('tg', chatId, text, null, userDoc.id);
               }
