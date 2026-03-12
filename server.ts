@@ -837,12 +837,15 @@ async function startServer() {
           // Check if the text matches any button's callback_data or text
           let matchedButtonEdge = null;
           if (currentNode.data.keyboard) {
-            for (let i = 0; i < currentNode.data.keyboard.length; i++) {
-              for (let j = 0; j < currentNode.data.keyboard[i].length; j++) {
-                const btn = currentNode.data.keyboard[i][j];
+            const kb = currentNode.data.keyboard;
+            for (let i = 0; i < kb.length; i++) {
+              const row = Array.isArray(kb[i]) ? kb[i] : (kb[i]?.buttons || []);
+              for (let j = 0; j < row.length; j++) {
+                const btn = row[j];
                 if (btn.callback_data === text || btn.text === text) {
-                  // Found the button!
-                  const edge = edges.find((e: any) => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
+                  // Use stable btn.id if available, fall back to positional index
+                  const handleId = btn.id ? `btn_${btn.id}` : `btn_${i}_${j}`;
+                  const edge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === handleId);
                   if (edge) {
                     matchedButtonEdge = edge;
                   }

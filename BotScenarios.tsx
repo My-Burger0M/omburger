@@ -85,67 +85,92 @@ const StartNode = ({ data }: { data: any }) => (
   </div>
 );
 
-const MessageNode = ({ data }: { data: any }) => (
-  <div className="bg-[#1a1a1a] border border-blue-500/50 rounded-xl w-56 shadow-lg shadow-blue-900/20 relative">
-    <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
-    <div className="bg-blue-500/10 p-2 rounded-t-xl border-b border-blue-500/20 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <MessageSquare size={14} className="text-blue-400" />
-        <span className="text-xs font-bold text-blue-100">{data.label || 'Сообщение'}</span>
+const MessageNode = ({ data }: { data: any }) => {
+  // Collect all non-url buttons for dedicated handles
+  const buttonHandles: { id: string; text: string }[] = [];
+  if (data.keyboard && data.keyboard.length > 0) {
+    data.keyboard.forEach((row: any[], ri: number) => {
+      row.forEach((btn: any, bi: number) => {
+        if (btn.type !== 'url') {
+          buttonHandles.push({ id: btn.id || `${ri}_${bi}`, text: btn.text });
+        }
+      });
+    });
+  }
+  const hasButtons = buttonHandles.length > 0;
+
+  return (
+    <div className="bg-[#1a1a1a] border border-blue-500/50 rounded-xl w-64 shadow-lg shadow-blue-900/20">
+      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
+      <div className="bg-blue-500/10 p-2 rounded-t-xl border-b border-blue-500/20 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageSquare size={14} className="text-blue-400" />
+          <span className="text-xs font-bold text-blue-100">{data.label || 'Сообщение'}</span>
+        </div>
+        {data.delay > 0 && (
+          <div className="flex items-center gap-1 text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded">
+            <Clock size={10} /> {data.delay}с
+          </div>
+        )}
       </div>
-      {data.delay > 0 && (
-        <div className="flex items-center gap-1 text-[10px] text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded">
-          <Clock size={10} /> {data.delay}с
+      <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
+        {data.mediaUrl && (
+          <div className="h-16 bg-[#222] rounded flex items-center justify-center border border-white/5 overflow-hidden">
+            {data.mediaUrl.match(/\.(jpeg|jpg|gif|png)$/) != null ? (
+              <img src={data.mediaUrl} alt="media" className="w-full h-full object-cover opacity-70" />
+            ) : (
+              <ImageIcon size={16} className="text-gray-500" />
+            )}
+          </div>
+        )}
+        <div className="truncate">{data.text || 'Нет текста...'}</div>
+        {data.keyboard && data.keyboard.length > 0 && (
+          <div className="flex flex-col gap-1 mt-1">
+            {data.keyboard.map((row: any[], i: number) => (
+              <div key={i} className="flex gap-1">
+                {row.map((btn: any, j: number) => (
+                  <div key={btn.id || `${i}_${j}`} className="flex-1 text-center text-[9px] py-1 rounded text-gray-300 px-1" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
+                    <span className="block truncate">{btn.text}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Button handle bar — each button gets its own named output port */}
+      {hasButtons && (
+        <div className="border-t border-blue-500/20 bg-[#111] px-2 pt-1.5 pb-5 rounded-b-xl">
+          <div className="flex flex-wrap gap-x-1 gap-y-3">
+            {buttonHandles.map((bh) => (
+              <div key={bh.id} className="flex-1 min-w-0 relative flex flex-col items-center">
+                <span className="text-[8px] text-gray-500 truncate w-full text-center block" title={bh.text}>{bh.text}</span>
+                <Handle
+                  type="source"
+                  position={Position.Bottom}
+                  id={`btn_${bh.id}`}
+                  className="!w-3 !h-3 !bg-yellow-400 !border-2 !border-yellow-600 hover:!scale-150 !transition-transform !cursor-crosshair"
+                  style={{ bottom: -10, left: '50%', transform: 'translateX(-50%)' }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
+      )}
+      <Handle type="source" position={Position.Bottom} id="main" className="w-3 h-3 bg-blue-500" />
+      {/* Timeout Handle */}
+      {data.timeout > 0 && (
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          id="timeout" 
+          className="w-3 h-3 bg-red-500" 
+          title={`Таймаут: ${data.timeout} мин`}
+        />
       )}
     </div>
-    <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
-      {data.mediaUrl && (
-        <div className="h-16 bg-[#222] rounded flex items-center justify-center border border-white/5 overflow-hidden">
-          {data.mediaUrl.match(/\.(jpeg|jpg|gif|png)$/) != null ? (
-            <img src={data.mediaUrl} alt="media" className="w-full h-full object-cover opacity-70" />
-          ) : (
-            <ImageIcon size={16} className="text-gray-500" />
-          )}
-        </div>
-      )}
-      <div className="truncate">{data.text || 'Нет текста...'}</div>
-      {data.keyboard && data.keyboard.length > 0 && (
-        <div className="flex flex-col gap-1 mt-1">
-          {data.keyboard.map((row: any[], i: number) => (
-            <div key={i} className="flex gap-1">
-              {row.map((btn: any, j: number) => (
-                <div key={j} className="flex-1 relative text-center bg-[#333] text-[9px] py-1 rounded text-gray-300 truncate px-1" style={{ backgroundColor: btn.color === 'positive' ? '#16a34a' : btn.color === 'negative' ? '#dc2626' : btn.color === 'primary' ? '#2563eb' : '#333' }}>
-                  {btn.text}
-                  {btn.type !== 'url' && (
-                    <Handle
-                      type="source"
-                      position={Position.Right}
-                      id={`btn_${i}_${j}`}
-                      className="w-3 h-3 bg-white border-2 border-blue-500"
-                      style={{ right: -6, top: '50%', transform: 'translateY(-50%)' }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-    <Handle type="source" position={Position.Bottom} id="main" className="w-3 h-3 bg-blue-500" />
-    {/* Timeout Handle */}
-    {data.timeout > 0 && (
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        id="timeout" 
-        className="w-3 h-3 bg-red-500" 
-        title={`Таймаут: ${data.timeout} мин`}
-      />
-    )}
-  </div>
-);
+  );
+};
 
 const TriggerNode = ({ data }: { data: any }) => (
   <div className="bg-[#1a1a1a] border border-purple-500/50 rounded-xl w-64 shadow-lg shadow-purple-900/20">
@@ -288,10 +313,15 @@ export default function BotScenarios() {
           const updatedNodes = loadedNodes.map((n: any) => {
             let kb = n.data.keyboard || [];
             // Robust deserialization: ensure it's an array of arrays for the UI
-            kb = kb.map((row: any) => {
-              if (Array.isArray(row)) return row;
-              if (row && row.buttons && Array.isArray(row.buttons)) return row.buttons;
-              return [];
+            kb = kb.map((row: any, ri: number) => {
+              let buttons: any[];
+              if (Array.isArray(row)) buttons = row;
+              else if (row && row.buttons && Array.isArray(row.buttons)) buttons = row.buttons;
+              else buttons = [];
+              return buttons.map((btn: any, bi: number) => ({
+                ...btn,
+                id: btn.id || `${ri}_${bi}`
+              }));
             });
             return {
               ...n,
@@ -765,8 +795,11 @@ export default function BotScenarios() {
                         <button 
                           onClick={() => {
                             const newKb = [...(selectedNode.data.keyboard as any[][])];
+                            const deletedRow = newKb[rIndex];
+                            const handleIds = deletedRow.map((b: any, bi: number) => `btn_${b.id || `${rIndex}_${bi}`}`);
                             newKb.splice(rIndex, 1);
                             updateNodeData('keyboard', newKb);
+                            setEdges(eds => eds.filter(e => !(e.source === selectedNode!.id && handleIds.includes(e.sourceHandle || ''))));
                           }}
                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                           title="Удалить ряд"
@@ -837,9 +870,12 @@ export default function BotScenarios() {
                               <button 
                                 onClick={() => {
                                   const newKb = [...(selectedNode.data.keyboard as any[][])];
+                                  const deletedBtn = newKb[rIndex][bIndex];
+                                  const handleId = `btn_${deletedBtn.id || `${rIndex}_${bIndex}`}`;
                                   newKb[rIndex].splice(bIndex, 1);
                                   if (newKb[rIndex].length === 0) newKb.splice(rIndex, 1);
                                   updateNodeData('keyboard', newKb);
+                                  setEdges(eds => eds.filter(e => !(e.source === selectedNode!.id && e.sourceHandle === handleId)));
                                 }}
                                 className="text-[10px] text-red-400 hover:text-red-300 mt-1 text-left"
                               >
@@ -853,7 +889,7 @@ export default function BotScenarios() {
                           <button 
                             onClick={() => {
                               const newKb = [...(selectedNode.data.keyboard as any[][])];
-                              newKb[rIndex].push({ text: 'Новая', type: 'callback', callback_data: 'cmd' });
+                              newKb[rIndex].push({ text: 'Новая', type: 'callback', callback_data: `cmd_${Date.now().toString(36)}`, id: `b${Date.now()}${Math.random().toString(36).substr(2,4)}` });
                               updateNodeData('keyboard', newKb);
                             }}
                             className="text-[10px] text-blue-400 hover:text-blue-300 mt-1 text-center border border-dashed border-blue-500/30 rounded py-1"
@@ -867,7 +903,8 @@ export default function BotScenarios() {
                     <button 
                       onClick={() => {
                         const currentKb = (selectedNode.data.keyboard as any[][]) || [];
-                        updateNodeData('keyboard', [...currentKb, [{ text: 'Новая кнопка', type: 'callback', callback_data: 'cmd_1' }]]);
+                        const btnId = `b${Date.now()}${Math.random().toString(36).substr(2,4)}`;
+                        updateNodeData('keyboard', [...currentKb, [{ text: 'Новая кнопка', type: 'callback', callback_data: `cmd_${Date.now().toString(36)}`, id: btnId }]]);
                       }}
                       className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-1"
                     >
