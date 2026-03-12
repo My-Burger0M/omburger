@@ -919,56 +919,58 @@ async function startServer() {
       const nodes = deserializeFromFirestore(scenario.nodes || []);
       const edges = deserializeFromFirestore(scenario.edges || []);
 
-      // Check if waiting for message or if it's a button click
+      // 1. Check if it's a button click globally
       let isButtonClick = false;
       let matchedButtonEdge = null;
       let nextNodeId = null;
 
-      if (chatData.scenarioState?.active) {
-        const currentNodeId = chatData.scenarioState.nodeId;
-        const currentNode = nodes.find((n: any) => n.id === currentNodeId);
-        
-        if (currentNode && currentNode.type === 'message') {
-          // Check if the text matches any button's callback_data or text
-          if (currentNode.data.keyboard) {
-            for (let i = 0; i < currentNode.data.keyboard.length; i++) {
-              for (let j = 0; j < currentNode.data.keyboard[i].length; j++) {
-                const btn = currentNode.data.keyboard[i][j];
-                if (btn.callback_data === text || btn.text === text || btn.id === text) {
-                  isButtonClick = true;
-                  const edge = edges.find((e: any) => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
-                  if (edge) {
-                    matchedButtonEdge = edge;
-                  }
-                  break;
+      for (const node of nodes) {
+        if (node.type === 'message' && node.data.keyboard) {
+          for (let i = 0; i < node.data.keyboard.length; i++) {
+            for (let j = 0; j < node.data.keyboard[i].length; j++) {
+              const btn = node.data.keyboard[i][j];
+              if (btn.callback_data === text || btn.text === text || btn.id === text) {
+                isButtonClick = true;
+                const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
+                if (edge) {
+                  matchedButtonEdge = edge;
                 }
+                break;
               }
-              if (isButtonClick) break;
             }
+            if (isButtonClick) break;
           }
-          
-          if (isButtonClick) {
-            nextNodeId = matchedButtonEdge ? matchedButtonEdge.target : null;
-          } else if (!text.startsWith('/start')) {
-            // Fallback to main edge if not a button click and not a start command
-            nextNodeId = chatData.scenarioState.replyNodeId;
-          }
-        } else if (!text.startsWith('/start')) {
-          // Not a message node, just use replyNodeId
-          nextNodeId = chatData.scenarioState.replyNodeId;
         }
+        if (isButtonClick) break;
+      }
+
+      if (isButtonClick) {
+        nextNodeId = matchedButtonEdge ? matchedButtonEdge.target : null;
         
-        if (isButtonClick || !text.startsWith('/start')) {
-          // Clear state
-          await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
-            'scenarioState.active': false
-          });
-          
-          if (nextNodeId) {
-            await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
-          }
-          return; // Done processing this message
+        // Clear state
+        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+          'scenarioState.active': false
+        });
+        
+        if (nextNodeId) {
+          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
         }
+        return; // Done processing this message
+      }
+
+      // 2. Check if waiting for message
+      if (chatData.scenarioState?.active && !text.startsWith('/start')) {
+        nextNodeId = chatData.scenarioState.replyNodeId;
+        
+        // Clear state
+        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+          'scenarioState.active': false
+        });
+        
+        if (nextNodeId) {
+          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
+        }
+        return; // Done processing this message
       }
 
       let startNodeId = null;
@@ -983,7 +985,7 @@ async function startServer() {
       }
       
       if (!startNodeId) {
-        if (text === '/start' || text.toLowerCase() === 'начать') {
+        if (text === '/start' || text.toLowerCase() === 'начать' || text.toLowerCase() === 'start') {
           const startNode = nodes.find((n: any) => n.type === 'start');
           if (startNode) {
             startNodeId = startNode.id;
@@ -992,7 +994,12 @@ async function startServer() {
         
         if (!startNodeId) {
           // Check for command node
-          const commandNodes = nodes.filter((n: any) => n.type === 'command' && n.data.command && text.toLowerCase() === n.data.command.toLowerCase());
+          const commandNodes = nodes.filter((n: any) => {
+            if (n.type !== 'command' || !n.data.command) return false;
+            const cmd = n.data.command.toLowerCase().trim();
+            const txt = text.toLowerCase().trim();
+            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd;
+          });
           if (commandNodes.length > 0) {
             // Sort by Y position to prioritize the top-most node on the canvas
             commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));

@@ -464,28 +464,38 @@ export default function Mailings() {
                 <div className="text-center py-8 text-gray-500">Пользователи не найдены</div>
               ) : (
                 <>
-                  <div className="flex items-center gap-3 p-3 bg-[#222] rounded-xl border border-white/5 mb-4">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
-                      onChange={handleSelectAll}
-                      className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-[#1a1a1a] cursor-pointer"
-                    />
+                  <div className="flex items-center gap-3 p-3 bg-[#222] rounded-xl border border-white/5 mb-4 cursor-pointer hover:bg-[#2a2a2a] transition-colors" onClick={handleSelectAll}>
+                    <div className="relative flex items-center justify-center w-5 h-5">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
+                        onChange={handleSelectAll}
+                        className="peer appearance-none w-5 h-5 border-2 border-gray-600 rounded bg-[#1a1a1a] checked:bg-purple-600 checked:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all cursor-pointer"
+                      />
+                      <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 14 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 5L4.5 8.5L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
                     <span className="text-sm font-medium text-white">Выбрать всех ({filteredUsers.length})</span>
                   </div>
                   {filteredUsers.map(user => (
                     <div 
                       key={user.id} 
-                      className="flex items-center justify-between p-4 bg-[#222] rounded-xl border border-white/5 cursor-pointer hover:bg-[#2a2a2a] transition-colors"
+                      className="flex items-center justify-between p-4 bg-[#222] rounded-xl border border-white/5 cursor-pointer hover:bg-[#2a2a2a] transition-colors mb-2"
                       onClick={() => handleToggleUser(user.id)}
                     >
                       <div className="flex items-center gap-4">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedUserIds.includes(user.id)}
-                          onChange={() => {}} // Handled by parent div click
-                          className="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-[#1a1a1a] cursor-pointer"
-                        />
+                        <div className="relative flex items-center justify-center w-5 h-5">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={() => {}} // Handled by parent div click
+                            className="peer appearance-none w-5 h-5 border-2 border-gray-600 rounded bg-[#1a1a1a] checked:bg-purple-600 checked:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all cursor-pointer"
+                          />
+                          <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 14 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M1 5L4.5 8.5L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center overflow-hidden">
                         {user.avatar ? (
                           <img 
