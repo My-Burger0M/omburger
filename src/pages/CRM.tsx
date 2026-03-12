@@ -32,6 +32,34 @@ export default function CRM() {
     fetchUsers();
   }, []);
 
+  useEffect(() => {
+    if (selectedUser && !selectedUser.createdAt) {
+      const fetchFirstMessage = async () => {
+        try {
+          // Dynamic import to avoid adding to top-level imports if not needed, but we can just use the imported ones
+          const { query, orderBy, limit } = await import('firebase/firestore');
+          const q = query(collection(db, 'chats', selectedUser.id, 'messages'), orderBy('timestamp', 'asc'), limit(1));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            const firstMsg = snapshot.docs[0].data();
+            if (firstMsg.timestamp) {
+              await updateDoc(doc(db, 'chats', selectedUser.id), {
+                createdAt: firstMsg.timestamp
+              });
+              // Update local state
+              const updatedUser = { ...selectedUser, createdAt: firstMsg.timestamp };
+              setSelectedUser(updatedUser);
+              setUsers(prev => prev.map(u => u.id === selectedUser.id ? updatedUser : u));
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching first message for createdAt:', e);
+        }
+      };
+      fetchFirstMessage();
+    }
+  }, [selectedUser]);
+
   const handleDeleteTags = async () => {
     if (!selectedUser) return;
     if (!confirm('Вы уверены, что хотите удалить ВСЕ теги у этого пользователя?')) return;
@@ -286,7 +314,11 @@ export default function CRM() {
                   <div className="flex justify-between">
                     <span className="text-gray-500">Первое касание (не стирается):</span>
                     <span className="text-white font-medium">
-                      {selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      {selectedUser.createdAt?.seconds 
+                        ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+                        : (selectedUser.lastMessageAt?.seconds 
+                            ? new Date(selectedUser.lastMessageAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+                            : '-')}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -310,7 +342,7 @@ export default function CRM() {
                 <h3 className="text-sm font-medium text-gray-400 mb-4">Статистика активности</h3>
                 <div className="space-y-4">
                   {(() => {
-                    const createdDate = selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000) : new Date();
+                    const createdDate = selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000) : (selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date());
                     const lastActiveDate = selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date();
                     const now = new Date();
                     

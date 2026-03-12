@@ -289,7 +289,7 @@ export default function Dialogs() {
           // If I update timestamp, they become active NOW. If I don't, they stay active if they were.
           // But if I clear history, `lastMessage` is gone.
           unreadCount: 0,
-          messageCount: 0
+          messageCount: 1
         });
       } catch (error) {
         console.error('Error clearing history:', error);
@@ -588,6 +588,15 @@ export default function Dialogs() {
       })) as Message[];
       setMessages(msgs);
       updateDoc(doc(db, 'chats', selectedChatId), { unreadCount: 0 });
+
+      // Mark voice messages as played (starts the 2-minute deletion timer)
+      msgs.forEach(msg => {
+        if (msg.mediaType === 'voice' && !msg.playedAt) {
+          updateDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id), {
+            playedAt: serverTimestamp()
+          }).catch(console.error);
+        }
+      });
     });
     return () => unsubscribe();
   }, [selectedChatId]);
@@ -632,8 +641,7 @@ export default function Dialogs() {
       if (msg.mediaType === 'voice' && msg.playedAt) {
         const playedTime = msg.playedAt.toMillis ? msg.playedAt.toMillis() : msg.playedAt;
         const timeElapsed = now - playedTime;
-        const duration = msg.voiceDuration || 0;
-        const deleteDelay = duration > 120 ? 180000 : 60000; // > 2 mins -> 3 mins, else 1 min
+        const deleteDelay = 120000; // 2 minutes
 
         if (timeElapsed >= deleteDelay) {
           deleteDoc(doc(db, 'chats', selectedChatId, 'messages', msg.id)).catch(console.error);

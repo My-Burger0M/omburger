@@ -21,7 +21,6 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [tokens, setTokens] = useState<{ botToken: string; chatId: string } | null>(null);
   const [scheduledTime, setScheduledTime] = useState('');
 
   useEffect(() => {
@@ -29,33 +28,8 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
       setSuccess(false);
       setError(null);
       setScheduledTime('');
-      fetchTokens();
     }
   }, [isOpen]);
-
-  const fetchTokens = async () => {
-    if (!currentUser) return;
-    try {
-      const docRef = doc(db, 'users', currentUser.uid, 'settings', 'tokens');
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.notificationBotToken && data.notificationChatId) {
-          setTokens({
-            botToken: data.notificationBotToken,
-            chatId: data.notificationChatId
-          });
-        } else {
-          setError('В настройках не указан токен бота уведомлений или ID чата.');
-        }
-      } else {
-        setError('Настройки не найдены. Пожалуйста, укажите токен и ID чата в разделе Настройки.');
-      }
-    } catch (err) {
-      console.error('Error fetching tokens:', err);
-      setError('Ошибка при загрузке настроек.');
-    }
-  };
 
   const prepareMessage = () => {
     let message = '';
@@ -95,7 +69,7 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
   };
 
   const handleSchedule = async () => {
-    if (!tokens || !currentUser || !scheduledTime) return;
+    if (!currentUser || !scheduledTime) return;
     setIsSending(true);
     setError(null);
 
@@ -109,8 +83,6 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
 
         await addDoc(collection(db, 'scheduled_notifications'), {
             userId: currentUser.uid,
-            botToken: tokens.botToken,
-            chatId: tokens.chatId,
             text: message,
             scheduledAt: scheduledTimestamp,
             status: 'pending',
@@ -130,7 +102,7 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
   };
 
   const handleSend = async () => {
-    if (!tokens) return;
+    if (!currentUser) return;
     
     setIsSending(true);
     setError(null);
@@ -139,10 +111,9 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
     try {
       const message = prepareMessage();
 
-      await axios.post(`https://api.telegram.org/bot${tokens.botToken}/sendMessage`, {
-        chat_id: tokens.chatId,
-        text: message,
-        parse_mode: 'Markdown'
+      await axios.post('/api/notifications/send', {
+        userId: currentUser.uid,
+        text: message
       });
 
       setSuccess(true);
@@ -151,7 +122,7 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
       }, 2000);
     } catch (err: any) {
       console.error('Error sending message:', err);
-      setError(err.response?.data?.description || 'Ошибка при отправке сообщения в Telegram.');
+      setError(err.response?.data?.error || 'Ошибка при отправке сообщения в Telegram.');
     } finally {
       setIsSending(false);
     }
@@ -248,7 +219,7 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
           </button>
           <button
             onClick={scheduledTime ? handleSchedule : handleSend}
-            disabled={isSending || !tokens || !!error}
+            disabled={isSending || !!error}
             className={`px-6 py-2 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                 scheduledTime ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-500 hover:bg-blue-600'
             }`}

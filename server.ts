@@ -3,7 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
-import { db, auth } from './server-firebase';
+import { db, auth, storage } from './server-firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
@@ -122,13 +123,23 @@ async function startServer() {
                 const chatId = context.senderId.toString();
                 const messageId = context.id.toString();
                 let username = `User ${chatId}`;
+                let avatar = '';
                 try {
-                  const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
-                  if (user) username = `${user.first_name} ${user.last_name}`;
+                  const [user] = await vk!.api.users.get({ user_ids: [context.senderId], fields: ['photo_200'] });
+                  if (user) {
+                    username = `${user.first_name} ${user.last_name}`;
+                    if (user.photo_200) {
+                      const response = await axios.get(user.photo_200, { responseType: 'arraybuffer' });
+                      const buffer = Buffer.from(response.data, 'binary');
+                      const storageRef = ref(storage, `avatars/vk_${context.senderId}.jpg`);
+                      await uploadBytes(storageRef, buffer, { contentType: 'image/jpeg' });
+                      avatar = await getDownloadURL(storageRef);
+                    }
+                  }
                 } catch (e) { console.error('Error fetching VK user info:', e); }
                 
                 console.log(`Received VK message from ${username}: ${text}`);
-                const saved = await saveMessage('vk', chatId, text, username, messageId);
+                const saved = await saveMessage('vk', chatId, text, username, messageId, avatar);
                 
                 if (saved) {
                   const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
@@ -147,8 +158,32 @@ async function startServer() {
                 const payload = context.eventPayload as any;
                 const text = payload?.cmd || payload?.command || JSON.stringify(payload) || 'Button clicked';
                 
+                let buttonText = text;
+                try {
+                  const scenarioRef = doc(db, 'users', userDoc.id, 'settings', `scenario_vk`);
+                  const scenarioSnap = await getDoc(scenarioRef);
+                  if (scenarioSnap.exists()) {
+                    const scenario = scenarioSnap.data();
+                    const nodes = deserializeFromFirestore(scenario.nodes || []);
+                    for (const node of nodes) {
+                      if (node.type === 'message' && node.data.keyboard) {
+                        for (const row of node.data.keyboard) {
+                          for (const btn of row) {
+                            if (btn.callback_data === text || btn.id === text) {
+                              buttonText = btn.text;
+                              break;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error('Error looking up VK button text:', e);
+                }
+
                 console.log(`Received VK message_event from ${username}: ${text}`);
-                const saved = await saveMessage('vk', chatId, `[Кнопка] ${text}`, username);
+                const saved = await saveMessage('vk', chatId, `[Кнопка] ${buttonText}`, username);
                 if (saved) {
                   await processScenario('vk', chatId, text, null, userDoc.id);
                 }
@@ -336,7 +371,13 @@ async function startServer() {
                 if (photos && photos.total_count > 0) {
                    const fileId = photos.photos[0][0].file_id;
                    const fileLink = await ctx.telegram.getFileLink(fileId);
-                   avatar = fileLink.href;
+                   
+                   // Download and upload to Firebase Storage to prevent expiration
+                   const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+                   const buffer = Buffer.from(response.data, 'binary');
+                   const storageRef = ref(storage, `avatars/tg_${user.id}.jpg`);
+                   await uploadBytes(storageRef, buffer, { contentType: 'image/jpeg' });
+                   avatar = await getDownloadURL(storageRef);
                 }
               } catch (e) {
                 console.error('Error fetching TG avatar:', e);
@@ -365,8 +406,32 @@ async function startServer() {
                 text = query.data;
               }
 
+              let buttonText = text;
+              try {
+                const scenarioRef = doc(db, 'users', userDoc.id, 'settings', `scenario_tg`);
+                const scenarioSnap = await getDoc(scenarioRef);
+                if (scenarioSnap.exists()) {
+                  const scenario = scenarioSnap.data();
+                  const nodes = deserializeFromFirestore(scenario.nodes || []);
+                  for (const node of nodes) {
+                    if (node.type === 'message' && node.data.keyboard) {
+                      for (const row of node.data.keyboard) {
+                        for (const btn of row) {
+                          if (btn.callback_data === text || btn.id === text) {
+                            buttonText = btn.text;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('Error looking up button text:', e);
+              }
+
               console.log(`Received TG callback_query from ${displayName}: ${text}`);
-              const saved = await saveMessage('tg', chatId, `[Кнопка] ${text}`, displayName);
+              const saved = await saveMessage('tg', chatId, `[Кнопка] ${buttonText}`, displayName);
               if (saved) {
                 await processScenario('tg', chatId, text, null, userDoc.id);
               }
@@ -420,13 +485,23 @@ async function startServer() {
             const chatId = context.senderId.toString();
             const messageId = context.id.toString();
             let username = `User ${chatId}`;
+            let avatar = '';
             try {
-              const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
-              if (user) username = `${user.first_name} ${user.last_name}`;
+              const [user] = await vk!.api.users.get({ user_ids: [context.senderId], fields: ['photo_200'] });
+              if (user) {
+                username = `${user.first_name} ${user.last_name}`;
+                if (user.photo_200) {
+                  const response = await axios.get(user.photo_200, { responseType: 'arraybuffer' });
+                  const buffer = Buffer.from(response.data, 'binary');
+                  const storageRef = ref(storage, `avatars/vk_${context.senderId}.jpg`);
+                  await uploadBytes(storageRef, buffer, { contentType: 'image/jpeg' });
+                  avatar = await getDownloadURL(storageRef);
+                }
+              }
             } catch (e) { console.error('Error fetching VK user info:', e); }
             
             console.log(`Received VK message from ${username}: ${text}`);
-            await saveMessage('vk', chatId, text, username, messageId);
+            await saveMessage('vk', chatId, text, username, messageId, avatar);
           });
 
           if (!process.env.VERCEL) {
@@ -680,9 +755,22 @@ async function startServer() {
         }
 
         const mainEdge = edges.find(e => e.source === currentNodeId && (!e.sourceHandle || e.sourceHandle === 'source' || e.sourceHandle === 'bottom' || e.sourceHandle === 'main'));
-        const buttonEdges = edges.filter(e => e.source === currentNodeId && e.sourceHandle && e.sourceHandle.startsWith('btn_'));
         
-        const shouldPause = node.data.timeout > 0 || buttonEdges.length > 0;
+        let hasButtonEdges = false;
+        if (node.data.keyboard) {
+          for (let i = 0; i < node.data.keyboard.length; i++) {
+            for (let j = 0; j < node.data.keyboard[i].length; j++) {
+              const btn = node.data.keyboard[i][j];
+              if (edges.some(e => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`))) {
+                hasButtonEdges = true;
+                break;
+              }
+            }
+            if (hasButtonEdges) break;
+          }
+        }
+        
+        const shouldPause = node.data.timeout > 0 || hasButtonEdges;
 
         if (shouldPause) {
           const timeoutMinutes = node.data.timeout || 0;
@@ -842,7 +930,7 @@ async function startServer() {
                 const btn = currentNode.data.keyboard[i][j];
                 if (btn.callback_data === text || btn.text === text) {
                   // Found the button!
-                  const edge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === `btn_${i}_${j}`);
+                  const edge = edges.find((e: any) => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
                   if (edge) {
                     matchedButtonEdge = edge;
                   }
@@ -970,6 +1058,11 @@ async function startServer() {
       if (avatar) chatUpdateData.avatar = avatar;
       if (displayName) chatUpdateData.displayName = displayName;
 
+      const chatDocSnap = await getDoc(chatRef);
+      if (!chatDocSnap.exists()) {
+        chatUpdateData.createdAt = serverTimestamp();
+      }
+
       await setDoc(chatRef, chatUpdateData, { merge: true });
 
       // Add message to subcollection
@@ -983,20 +1076,6 @@ async function startServer() {
       if (mediaType) messageData.mediaType = mediaType;
 
       await setDoc(msgRef, messageData);
-
-      if (mediaType === 'voice') {
-        setTimeout(async () => {
-          try {
-            await updateDoc(msgRef, {
-              mediaUrl: null,
-              text: '[Голосовое сообщение удалено]'
-            });
-            console.log(`Voice message ${msgRef.id} auto-deleted after 1 minute`);
-          } catch (e) {
-            console.error('Error auto-deleting voice message:', e);
-          }
-        }, 60000);
-      }
 
       await updateStats(platform, chatId);
       console.log(`Message saved from ${platform} user ${username}`);
@@ -1246,6 +1325,37 @@ async function startServer() {
     }
   });
 
+  // API to send notification from server to hide tokens
+  app.post('/api/notifications/send', async (req, res) => {
+    const { userId, text } = req.body;
+    
+    if (!userId || !text) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', userId, 'settings', 'tokens');
+      const userDocSnap = await getDoc(userDocRef);
+      const tokens = userDocSnap.data();
+
+      if (!tokens || !tokens.botToken || !tokens.chatId) {
+        return res.status(400).json({ error: 'Notification bot not configured' });
+      }
+
+      await axios.post(`https://api.telegram.org/bot${tokens.botToken}/sendMessage`, {
+        chat_id: tokens.chatId,
+        text: text,
+        parse_mode: 'Markdown'
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error sending notification:', error.response?.data || error.message);
+      const errorMessage = error.response?.description || error.response?.data?.description || error.message || 'Failed to send notification';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // API to broadcast by tag
   app.post('/api/broadcast/tag', async (req, res) => {
     const { tag, text, userId, mediaUrl, mediaType, keyboard } = req.body;
@@ -1387,13 +1497,23 @@ async function startServer() {
             const chatId = context.senderId.toString();
             const messageId = context.id.toString();
             let username = `User ${chatId}`;
+            let avatar = '';
             try {
-              const [user] = await vk!.api.users.get({ user_ids: [context.senderId] });
-              if (user) username = `${user.first_name} ${user.last_name}`;
+              const [user] = await vk!.api.users.get({ user_ids: [context.senderId], fields: ['photo_200'] });
+              if (user) {
+                username = `${user.first_name} ${user.last_name}`;
+                if (user.photo_200) {
+                  const response = await axios.get(user.photo_200, { responseType: 'arraybuffer' });
+                  const buffer = Buffer.from(response.data, 'binary');
+                  const storageRef = ref(storage, `avatars/vk_${context.senderId}.jpg`);
+                  await uploadBytes(storageRef, buffer, { contentType: 'image/jpeg' });
+                  avatar = await getDownloadURL(storageRef);
+                }
+              }
             } catch (e) { console.error('Error fetching VK user info:', e); }
             
             console.log(`Received VK message from ${username}: ${text}`);
-            await saveMessage('vk', chatId, text, username, messageId);
+            await saveMessage('vk', chatId, text, username, messageId, avatar);
           });
 
           try {
@@ -1573,11 +1693,19 @@ async function startServer() {
           continue;
         }
 
-        const { botToken, chatId, text } = data;
+        const { userId, text } = data;
         
         try {
-          await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            chat_id: chatId,
+          const userDocRef = doc(db, 'users', userId, 'settings', 'tokens');
+          const userDocSnap = await getDoc(userDocRef);
+          const tokens = userDocSnap.data();
+
+          if (!tokens || !tokens.notificationBotToken || !tokens.notificationChatId) {
+            throw new Error('Notification bot not configured');
+          }
+
+          await axios.post(`https://api.telegram.org/bot${tokens.notificationBotToken}/sendMessage`, {
+            chat_id: tokens.notificationChatId,
             text: text,
             parse_mode: 'Markdown'
           });
