@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import os from 'os';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth, storage } from './server-firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -39,6 +40,39 @@ async function startServer() {
   // Health Check Endpoint
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/api/system/stats', (req, res) => {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const memUsagePercent = (usedMem / totalMem) * 100;
+
+    const cpus = os.cpus();
+    let totalIdle = 0;
+    let totalTick = 0;
+
+    cpus.forEach(cpu => {
+      for (const type in cpu.times) {
+        totalTick += cpu.times[type as keyof typeof cpu.times];
+      }
+      totalIdle += cpu.times.idle;
+    });
+
+    const cpuUsagePercent = 100 - ~~(100 * totalIdle / totalTick);
+
+    res.json({
+      memory: {
+        total: totalMem,
+        used: usedMem,
+        free: freeMem,
+        percent: memUsagePercent
+      },
+      cpu: {
+        percent: cpuUsagePercent
+      },
+      uptime: os.uptime()
+    });
   });
 
   // --- Firebase Auth for Server ---
@@ -168,7 +202,8 @@ async function startServer() {
                     for (const node of nodes) {
                       if (node.type === 'message' && node.data.keyboard) {
                         for (const row of node.data.keyboard) {
-                          for (const btn of row) {
+                          const buttons = row.buttons || row;
+                          for (const btn of buttons) {
                             if (btn.callback_data === text || btn.id === text) {
                               buttonText = btn.text;
                               break;
@@ -184,7 +219,7 @@ async function startServer() {
 
                 console.log(`Received VK message_event from ${username}: ${text}`);
                 const eventId = context.eventId || `evt_${Date.now()}_${Math.random()}`;
-                const saved = await saveMessage('vk', chatId, `[Кнопка] ${buttonText}`, username, eventId);
+                const saved = await saveMessage('vk', chatId, `(${buttonText})`, username, eventId);
                 if (saved) {
                   await processScenario('vk', chatId, text, null, userDoc.id);
                 }
@@ -417,7 +452,8 @@ async function startServer() {
                   for (const node of nodes) {
                     if (node.type === 'message' && node.data.keyboard) {
                       for (const row of node.data.keyboard) {
-                        for (const btn of row) {
+                        const buttons = row.buttons || row;
+                        for (const btn of buttons) {
                           if (btn.callback_data === text || btn.id === text) {
                             buttonText = btn.text;
                             break;
@@ -433,7 +469,7 @@ async function startServer() {
 
               console.log(`Received TG callback_query from ${displayName}: ${text}`);
               const queryId = query.id || `cb_${Date.now()}_${Math.random()}`;
-              const saved = await saveMessage('tg', chatId, `[Кнопка] ${buttonText}`, displayName, queryId);
+              const saved = await saveMessage('tg', chatId, `(${buttonText})`, displayName, queryId);
               if (saved) {
                 await processScenario('tg', chatId, text, null, userDoc.id);
               }
@@ -761,8 +797,9 @@ async function startServer() {
         let hasButtonEdges = false;
         if (node.data.keyboard) {
           for (let i = 0; i < node.data.keyboard.length; i++) {
-            for (let j = 0; j < node.data.keyboard[i].length; j++) {
-              const btn = node.data.keyboard[i][j];
+            const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
+            for (let j = 0; j < row.length; j++) {
+              const btn = row[j];
               if (edges.some(e => e.source === currentNodeId && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`))) {
                 hasButtonEdges = true;
                 break;
@@ -927,8 +964,9 @@ async function startServer() {
       for (const node of nodes) {
         if (node.type === 'message' && node.data.keyboard) {
           for (let i = 0; i < node.data.keyboard.length; i++) {
-            for (let j = 0; j < node.data.keyboard[i].length; j++) {
-              const btn = node.data.keyboard[i][j];
+            const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
+            for (let j = 0; j < row.length; j++) {
+              const btn = row[j];
               if (btn.callback_data === text || btn.text === text || btn.id === text) {
                 isButtonClick = true;
                 const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
@@ -1113,7 +1151,24 @@ async function startServer() {
         
         const bot = new Telegraf(tokens.tg);
         const extras: any = {};
-        if (keyboard) extras.reply_markup = keyboard;
+        if (keyboard && keyboard.inline_keyboard) {
+          extras.reply_markup = {
+            inline_keyboard: keyboard.inline_keyboard.map((row: any[]) =>
+              row.map((btn: any) => {
+                const tgBtn: any = { text: btn.text };
+                if (btn.type === 'url' && btn.url) {
+                  tgBtn.url = btn.url;
+                } else {
+                  tgBtn.callback_data = btn.callback_data || btn.id;
+                }
+                if (btn.color && btn.color !== 'default') {
+                  tgBtn.color = btn.color;
+                }
+                return tgBtn;
+              })
+            )
+          };
+        }
 
         if (mediaUrl) {
           // Check for Telegram message links (private or public) to use copyMessage
@@ -1209,7 +1264,7 @@ async function startServer() {
                 btnColor = 'secondary';
               }
               return { 
-                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd: btn.callback_data }) },
+                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd: btn.callback_data || btn.id }) },
                 color: btnColor
               };
             })

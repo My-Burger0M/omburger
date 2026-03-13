@@ -26,6 +26,7 @@ export default function Settings() {
   const [serverStatus, setServerStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [dbStatus, setDbStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [botStatus, setBotStatus] = useState<{ vk: boolean; vkPolling: boolean; tg: boolean; wb: boolean; ozon: boolean; max: boolean; lastVkError?: string; lastTgError?: string } | null>(null);
+  const [systemStats, setSystemStats] = useState<any>(null);
   
   // Simulation
   const [testMessage, setTestMessage] = useState('');
@@ -58,7 +59,26 @@ export default function Settings() {
     checkServer();
     checkDatabase();
     checkBotStatus();
+    checkSystemStats();
+    
+    const interval = setInterval(() => {
+      checkServer();
+      checkDatabase();
+      checkBotStatus();
+      checkSystemStats();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [currentUser]);
+
+  const checkSystemStats = async () => {
+    try {
+      const res = await axios.get('/api/system/stats');
+      setSystemStats(res.data);
+    } catch (e) {
+      console.error('System stats check failed:', e);
+      setSystemStats(null);
+    }
+  };
 
   const checkServer = async () => {
     try {
@@ -208,6 +228,79 @@ export default function Settings() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-3xl font-bold mb-8">Настройки интеграций</h1>
+
+      {/* System Load Panel */}
+      <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 space-y-4 mb-8">
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <Activity className="text-purple-500" />
+          Нагрузка системы
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-[#2a2a2a] p-4 rounded-xl flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">VPS (Сервер)</div>
+              {systemStats ? (
+                <span className="text-xs text-gray-400">Аптайм: {Math.floor(systemStats.uptime / 3600)}ч {Math.floor((systemStats.uptime % 3600) / 60)}м</span>
+              ) : (
+                <span className="text-xs text-yellow-500">Загрузка...</span>
+              )}
+            </div>
+            
+            {systemStats && (
+              <>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-gray-400">CPU</span>
+                    <span className={systemStats.cpu.percent > 80 ? 'text-red-400' : 'text-green-400'}>{systemStats.cpu.percent.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-[#1a1a1a] rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full ${systemStats.cpu.percent > 80 ? 'bg-red-500' : 'bg-green-500'}`} 
+                      style={{ width: `${Math.min(100, systemStats.cpu.percent)}%` }}
+                    ></div>
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-gray-400">RAM ({(systemStats.memory.used / 1024 / 1024 / 1024).toFixed(1)} / {(systemStats.memory.total / 1024 / 1024 / 1024).toFixed(1)} GB)</span>
+                    <span className={systemStats.memory.percent > 80 ? 'text-red-400' : 'text-green-400'}>{systemStats.memory.percent.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-[#1a1a1a] rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full ${systemStats.memory.percent > 80 ? 'bg-red-500' : 'bg-green-500'}`} 
+                      style={{ width: `${Math.min(100, systemStats.memory.percent)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-[#2a2a2a] p-4 rounded-xl flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">Firebase (База данных)</div>
+              <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">
+                Открыть консоль
+              </a>
+            </div>
+            <div className="text-xs text-gray-400 mb-2">
+              Текущая статистика использования доступна только в консоли Firebase. Бесплатный лимит:
+            </div>
+            <ul className="text-xs text-gray-300 space-y-1 list-disc pl-4">
+              <li>50,000 чтений в день</li>
+              <li>20,000 записей в день</li>
+              <li>20,000 удалений в день</li>
+              <li>1 ГБ хранения данных</li>
+            </ul>
+            <div className="mt-auto pt-2 border-t border-white/5">
+              <div className="text-[10px] text-gray-500">
+                При превышении лимитов база данных может быть временно недоступна до следующего дня.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Diagnostics Panel */}
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 space-y-4">

@@ -418,9 +418,14 @@ export default function Dialogs() {
           setMediaType(note.mediaType || 'photo');
           setShowAttach(true);
         }
-        if (note.keyboard && note.keyboard.length > 0) {
-          setKeyboardRows(note.keyboard);
-          setShowKeyboardBuilder(true);
+        if (note.keyboard && Array.isArray(note.keyboard)) {
+            setKeyboardRows(note.keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || [])));
+            setShowKeyboardBuilder(true);
+        } else if (note.keyboard && note.keyboard.inline_keyboard) {
+            setKeyboardRows(note.keyboard.inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || [])));
+            setShowKeyboardBuilder(true);
+        } else {
+            setKeyboardRows([]);
         }
         setShowNotes(false);
     }
@@ -1234,7 +1239,7 @@ export default function Dialogs() {
                                 return;
                             }
                             const newRows = [...keyboardRows];
-                            newRows[rIndex].push({ text: btnLabel, url: btnUrl || undefined, color: btnColor });
+                            newRows[rIndex] = [...newRows[rIndex], { text: btnLabel, url: btnUrl || undefined, color: btnColor }];
                             setKeyboardRows(newRows);
                             setBtnLabel('');
                             setBtnUrl('');
@@ -1249,7 +1254,15 @@ export default function Dialogs() {
                   </div>
                   
                   <button 
-                      onClick={() => setKeyboardRows([...keyboardRows, []])}
+                      onClick={() => {
+                        if (btnLabel) {
+                          setKeyboardRows([...keyboardRows, [{ text: btnLabel, url: btnUrl || undefined, color: btnColor }]]);
+                          setBtnLabel('');
+                          setBtnUrl('');
+                        } else {
+                          setKeyboardRows([...keyboardRows, []]);
+                        }
+                      }}
                       className="w-full py-2 border border-dashed border-white/10 rounded-lg text-xs text-gray-500 hover:text-purple-400 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all flex items-center justify-center gap-2"
                     >
                       <Plus size={12} /> Добавить новый ряд
@@ -1473,10 +1486,10 @@ export default function Dialogs() {
                             <button 
                                 onClick={() => {
                                     if (!btnLabel) return;
-                                    const currentKeyboard = editingNote.keyboard || [];
+                                    const currentKeyboard = [...(editingNote.keyboard || [])];
                                     if (currentKeyboard.length === 0) currentKeyboard.push([]);
                                     const lastRowIndex = currentKeyboard.length - 1;
-                                    currentKeyboard[lastRowIndex].push({ text: btnLabel, url: btnUrl || undefined, color: btnColor });
+                                    currentKeyboard[lastRowIndex] = [...currentKeyboard[lastRowIndex], { text: btnLabel, url: btnUrl || undefined, color: btnColor }];
                                     setEditingNote({ ...editingNote, keyboard: currentKeyboard });
                                     setBtnLabel('');
                                     setBtnUrl('');

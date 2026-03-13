@@ -17,7 +17,8 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   useReactFlow,
-  useUpdateNodeInternals
+  useUpdateNodeInternals,
+  useEdges
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Save, Play, Plus, Trash2, Settings, MessageSquare, Tag, Zap, Link as LinkIcon, Image as ImageIcon, Clock, Power, AlertCircle, Maximize, Minimize, CheckCircle2 } from 'lucide-react';
@@ -37,6 +38,7 @@ const CustomEdge = ({
   style = {},
   markerEnd,
   selected,
+  sourceHandleId,
 }: any) => {
   const { setEdges } = useReactFlow();
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -48,9 +50,16 @@ const CustomEdge = ({
     targetPosition,
   });
 
+  const isButtonEdge = sourceHandleId && sourceHandleId !== 'main' && sourceHandleId !== 'timeout';
+  const edgeStyle = {
+    ...style,
+    stroke: isButtonEdge ? '#22c55e' : (style.stroke || '#3b82f6'),
+    strokeWidth: selected ? 3 : 2,
+  };
+
   return (
     <>
-      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={edgeStyle} />
       {selected && (
         <EdgeLabelRenderer>
           <div
@@ -88,10 +97,15 @@ const StartNode = ({ data }: { data: any }) => (
 
 const MessageNode = ({ id, data }: { id: string, data: any }) => {
   const updateNodeInternals = useUpdateNodeInternals();
+  const edges = useEdges();
 
   useEffect(() => {
     updateNodeInternals(id);
   }, [data.keyboard, data.text, data.mediaUrl, id, updateNodeInternals]);
+
+  const isHandleConnected = (handleId: string) => {
+    return edges.some(edge => edge.source === id && edge.sourceHandle === handleId);
+  };
 
   return (
     <div className="bg-[#1a1a1a] border border-blue-500/50 rounded-xl w-64 shadow-lg shadow-blue-900/20 relative">
@@ -136,7 +150,7 @@ const MessageNode = ({ id, data }: { id: string, data: any }) => {
                         type="source"
                         position={Position.Bottom}
                         id={btn.id || `btn_${i}_${j}`}
-                        className="w-3 h-3 bg-yellow-400 border-2 border-[#1a1a1a] hover:scale-125 transition-transform z-10"
+                        className={`w-3 h-3 border-2 border-[#1a1a1a] hover:scale-125 transition-transform z-10 ${isHandleConnected(btn.id || `btn_${i}_${j}`) ? 'bg-green-500' : 'bg-yellow-400'}`}
                         style={{ bottom: -6 }}
                       />
                     )}

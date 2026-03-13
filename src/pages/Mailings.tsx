@@ -164,7 +164,11 @@ export default function Mailings() {
     setMediaUrl(note.mediaUrl || '');
     setMediaType(note.mediaType || 'photo');
     if (note.keyboard && Array.isArray(note.keyboard)) {
-      setKeyboard(note.keyboard);
+      const normalizedKeyboard = note.keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
+      setKeyboard(normalizedKeyboard);
+    } else if (note.keyboard && note.keyboard.inline_keyboard) {
+      const normalizedKeyboard = note.keyboard.inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
+      setKeyboard(normalizedKeyboard);
     } else {
       setKeyboard([]);
     }
@@ -355,7 +359,7 @@ export default function Mailings() {
     const currentKeyboard = [...keyboard];
     if (currentKeyboard.length === 0) currentKeyboard.push([]);
     const lastRowIndex = currentKeyboard.length - 1;
-    currentKeyboard[lastRowIndex].push({ text: btnLabel, url: btnUrl || undefined, color: btnColor });
+    currentKeyboard[lastRowIndex] = [...currentKeyboard[lastRowIndex], { text: btnLabel, url: btnUrl || undefined, color: btnColor }];
     setKeyboard(currentKeyboard);
     setBtnLabel('');
     setBtnUrl('');
