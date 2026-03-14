@@ -585,43 +585,6 @@ export default function Settings() {
           </button>
         </div>
       </div>
-
-      {/* Simulation Tool */}
-      <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 space-y-6">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          <MessageSquare className="text-green-500" />
-          Тест Webhook (Симуляция входящего сообщения)
-        </h2>
-        <p className="text-sm text-gray-400">
-          Так как сервер находится в закрытом контуре, реальные вебхуки от Telegram/VK не дойдут сюда без настройки туннеля.
-          Используйте этот инструмент для проверки логики чатов и статистики.
-        </p>
-
-        <div className="flex gap-4">
-          <select 
-            value={testPlatform}
-            onChange={(e) => setTestPlatform(e.target.value as any)}
-            className="bg-[#2a2a2a] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-          >
-            <option value="tg">Telegram</option>
-            <option value="vk">ВКонтакте</option>
-            <option value="max">MAX</option>
-          </select>
-          <input 
-            type="text" 
-            value={testMessage}
-            onChange={(e) => setTestMessage(e.target.value)}
-            placeholder="Текст сообщения..."
-            className="flex-1 bg-[#2a2a2a] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-          />
-          <button 
-            onClick={handleSimulateWebhook}
-            className="px-6 py-3 bg-green-600 rounded-xl hover:bg-green-500 transition-colors font-medium"
-          >
-            Отправить
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

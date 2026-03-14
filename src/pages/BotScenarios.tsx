@@ -268,8 +268,6 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [];
 
-const EMOJIS = ['😀', '😂', '🥰', '😎', '🤔', '🔥', '👍', '❤️', '🎉', '✨', '✅', '❌', '⚠️', '💸', '🎁'];
-
 export default function BotScenarios() {
   const { currentUser } = useAuth();
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -533,12 +531,6 @@ export default function BotScenarios() {
     setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, [key]: value } } : null);
   };
 
-  const insertEmoji = (emoji: string) => {
-    if (!selectedNode || selectedNode.data.type !== 'message') return;
-    const currentText = selectedNode.data.text || '';
-    updateNodeData('text', currentText + emoji);
-  };
-
   return (
     <div className={`flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 bg-[#0f0f0f] p-4' : 'h-[calc(100vh-6rem)]'}`}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
@@ -751,17 +743,6 @@ export default function BotScenarios() {
                         className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none min-h-[100px] resize-none"
                         placeholder="Введите текст..."
                       />
-                      <div className="bg-[#1a1a1a] border-t border-white/10 p-1.5 flex flex-wrap gap-1">
-                        {EMOJIS.map(emoji => (
-                          <button 
-                            key={emoji} 
-                            onClick={() => insertEmoji(emoji)}
-                            className="hover:bg-[#333] p-1 rounded text-sm transition-colors"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   </div>
 

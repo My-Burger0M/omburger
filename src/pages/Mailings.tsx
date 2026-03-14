@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, serverTimestamp, query, where, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2, Upload, Smile } from 'lucide-react';
+import { Users, Send, Filter, Tag as TagIcon, Search, Image as ImageIcon, Video, X, AlertCircle, MessageSquare, CheckCircle2, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { useRef } from 'react';
 
 interface ChatUser {
@@ -64,8 +63,6 @@ export default function Mailings() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   
   const [messageText, setMessageText] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<'photo' | 'video'>('photo');
   const [keyboard, setKeyboard] = useState<any[][]>([]);
@@ -147,6 +144,24 @@ export default function Mailings() {
     }
   };
 
+  const deserializeFromFirestore = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(item => deserializeFromFirestore(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      if (obj._isNestedArray && Array.isArray(obj.items)) {
+        return deserializeFromFirestore(obj.items);
+      }
+      const newObj: any = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          newObj[key] = deserializeFromFirestore(obj[key]);
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
   const fetchNotes = async () => {
     if (!currentUser) return;
     try {
@@ -154,7 +169,7 @@ export default function Mailings() {
       const snapshot = await getDocs(q);
       const fetchedNotes: any[] = [];
       snapshot.forEach(doc => {
-        fetchedNotes.push({ id: doc.id, ...doc.data() });
+        fetchedNotes.push({ id: doc.id, ...deserializeFromFirestore(doc.data()) });
       });
       // Sort in memory since we might not have an index
       setNotes(fetchedNotes.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
@@ -293,16 +308,6 @@ export default function Mailings() {
   };
 
   // Update selected users when filters change
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   useEffect(() => {
     const filteredIds = filteredUsers.map(u => u.id);
     setSelectedUserIds(prev => prev.filter(id => filteredIds.includes(id)));
@@ -641,25 +646,6 @@ export default function Mailings() {
                     placeholder="Введите текст рассылки..."
                     className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 min-h-[120px] resize-none"
                   />
-                  <div className="absolute bottom-3 right-3" ref={emojiPickerRef}>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      className="p-2 text-gray-500 hover:text-white"
-                    >
-                      <Smile size={20} />
-                    </button>
-                    {showEmojiPicker && (
-                      <div className="absolute bottom-full right-0 mb-2 z-50">
-                        <EmojiPicker 
-                          theme={Theme.DARK}
-                          onEmojiClick={(emojiData) => {
-                            setMessageText(prev => prev + emojiData.emoji);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
 

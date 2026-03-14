@@ -913,12 +913,12 @@ async function startServer() {
         if (typeof payload === 'string') {
           try {
             const parsed = JSON.parse(payload);
-            matchValue = parsed.cmd || payload;
+            matchValue = parsed.cmd || parsed.command || payload;
           } catch (e) {
             matchValue = payload;
           }
-        } else if (typeof payload === 'object' && (payload as any).cmd) {
-          matchValue = (payload as any).cmd;
+        } else if (typeof payload === 'object') {
+          matchValue = (payload as any).cmd || (payload as any).command || JSON.stringify(payload);
         }
       }
 
@@ -968,7 +968,9 @@ async function startServer() {
       }
       
       if (!startNodeId) {
-        if (text === '/start' || text.toLowerCase() === 'начать' || text.toLowerCase() === 'start') {
+        const txt = text.toLowerCase().trim();
+        const matchValLower = typeof matchValue === 'string' ? matchValue.toLowerCase().trim() : '';
+        if (txt === '/start' || txt === 'начать' || txt === 'start' || matchValLower === 'start' || matchValLower === 'начать') {
           const startNode = nodes.find((n: any) => n.type === 'start');
           if (startNode) {
             startNodeId = startNode.id;
@@ -980,8 +982,7 @@ async function startServer() {
           const commandNodes = nodes.filter((n: any) => {
             if (n.type !== 'command' || !n.data.command) return false;
             const cmd = n.data.command.toLowerCase().trim();
-            const txt = text.toLowerCase().trim();
-            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd;
+            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd || matchValLower === cmd || matchValLower === `/${cmd}`;
           });
           if (commandNodes.length > 0) {
             commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));

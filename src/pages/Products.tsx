@@ -217,14 +217,6 @@ export default function Products() {
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold">Товары</h1>
-        <button 
-          onClick={handleSync}
-          disabled={isSyncing}
-          className="bg-[#2a2a2a] hover:bg-[#333] text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"
-        >
-          <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
-          {isSyncing ? 'Синхронизация...' : 'Синхронизировать API'}
-        </button>
       </div>
 
       {/* Stats Row */}

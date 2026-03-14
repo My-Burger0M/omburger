@@ -73,7 +73,7 @@ export default function Login() {
     <div 
       className="min-h-screen flex items-center justify-center p-4 text-white font-sans relative overflow-hidden"
       style={{
-        backgroundImage: 'url("https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop")',
+        backgroundImage: 'url("/login-bg.jpg")',
         backgroundSize: 'cover',
         backgroundPosition: 'center'
       }}

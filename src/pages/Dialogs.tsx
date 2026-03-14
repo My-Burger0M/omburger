@@ -14,7 +14,6 @@ import ConfirmationModal from '../components/ConfirmationModal';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DateTime } from 'luxon';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 // Sound for new messages
 const playNotificationSound = () => {
@@ -122,8 +121,6 @@ export default function Dialogs() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<'all' | 'tg' | 'vk' | 'max'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -635,16 +632,6 @@ export default function Dialogs() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // --- Voice Message Deletion ---
   useEffect(() => {
@@ -1321,25 +1308,6 @@ export default function Dialogs() {
                   placeholder="Напишите сообщение..." 
                   className="w-full bg-transparent border-none px-4 py-3 text-sm text-white focus:ring-0 placeholder:text-gray-600"
                 />
-                <div className="relative" ref={emojiPickerRef}>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="p-2 text-gray-500 hover:text-white mr-1"
-                  >
-                    <Smile size={20} />
-                  </button>
-                  {showEmojiPicker && (
-                    <div className="absolute bottom-full right-0 mb-2 z-50">
-                      <EmojiPicker 
-                        theme={Theme.DARK}
-                        onEmojiClick={(emojiData) => {
-                          setNewMessage(prev => prev + emojiData.emoji);
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
 
               <button 
