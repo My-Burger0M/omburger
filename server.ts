@@ -110,11 +110,35 @@ async function startServer() {
     
     vk.updates.on('message_new', async (context) => {
       if (context.isOutbox) return;
-      const text = context.text || '';
+      let text = context.text || '';
       const chatId = context.senderId.toString();
-      const messageId = context.id.toString();
+      const messageId = (context.conversationMessageId || context.id).toString();
       let username = `User ${chatId}`;
       let avatar = '';
+      let mediaUrl = '';
+      let mediaType = '';
+
+      if (context.attachments && context.attachments.length > 0) {
+        const attachment = context.attachments[0] as any;
+        if (attachment.type === 'photo') {
+          mediaType = 'photo';
+          mediaUrl = attachment.largeSizeUrl || attachment.mediumSizeUrl || '';
+          if (!text) text = '[Фото]';
+        } else if (attachment.type === 'video') {
+          mediaType = 'video';
+          mediaUrl = `https://vk.com/video${attachment.ownerId}_${attachment.id}`;
+          if (!text) text = '[Видео]';
+        } else if (attachment.type === 'audio_message') {
+          mediaType = 'voice';
+          mediaUrl = attachment.linkOgg || attachment.linkMp3 || attachment.url || '';
+          if (!text) text = '[Голосовое сообщение]';
+        } else if (attachment.type === 'doc') {
+          mediaType = 'photo';
+          mediaUrl = attachment.url || '';
+          if (!text) text = '[Документ]';
+        }
+      }
+
       try {
         const [user] = await vk!.api.users.get({ user_ids: [context.senderId], fields: ['photo_200'] });
         if (user) {
@@ -130,7 +154,7 @@ async function startServer() {
       } catch (e) { console.error('Error fetching VK user info:', e); }
       
       console.log(`Received VK message from ${username}: ${text}`);
-      const saved = await saveMessage('vk', chatId, text, username, messageId, avatar);
+      const saved = await saveMessage('vk', chatId, text, username, messageId, avatar, undefined, mediaUrl, mediaType);
       
       if (saved && userId) {
         const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
@@ -786,8 +810,11 @@ async function startServer() {
             if (groupId.includes('vk.com/')) {
               groupId = groupId.split('vk.com/')[1];
             }
+            if (groupId.startsWith('@')) {
+              groupId = groupId.substring(1);
+            }
             const isMember = await vkApi.api.groups.isMember({ group_id: groupId, user_id: parseInt(chatId) });
-            isSubscribed = isMember === 1;
+            isSubscribed = isMember === 1 || isMember === true;
           }
         } catch (e: any) {
           console.error('Error checking subscription:', e);
@@ -881,13 +908,27 @@ async function startServer() {
       let matchedButtonEdge = null;
       let nextNodeId = null;
 
+      let matchValue = text;
+      if (payload) {
+        if (typeof payload === 'string') {
+          try {
+            const parsed = JSON.parse(payload);
+            matchValue = parsed.cmd || payload;
+          } catch (e) {
+            matchValue = payload;
+          }
+        } else if (typeof payload === 'object' && (payload as any).cmd) {
+          matchValue = (payload as any).cmd;
+        }
+      }
+
       for (const node of nodes) {
         if (node.type === 'message' && node.data.keyboard) {
           for (let i = 0; i < node.data.keyboard.length; i++) {
             const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
             for (let j = 0; j < row.length; j++) {
               const btn = row[j];
-              if (btn.callback_data === text || btn.text === text || btn.id === text) {
+              if (btn.callback_data === matchValue || btn.text === matchValue || btn.id === matchValue) {
                 isButtonClick = true;
                 const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
                 if (edge) {
@@ -916,26 +957,10 @@ async function startServer() {
         return; // Done processing this message
       }
 
-      // 2. Check if waiting for message
-      if (chatData.scenarioState?.active && !text.startsWith('/start')) {
-        nextNodeId = chatData.scenarioState.replyNodeId;
-        
-        // Clear state
-        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
-          'scenarioState.active': false
-        });
-        
-        if (nextNodeId) {
-          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
-        }
-        return; // Done processing this message
-      }
-
+      // 2. Check if it's a command or start
       let startNodeId = null;
 
       if (payload) {
-        // Find trigger node where the link ends with the payload
-        // e.g. link = "https://t.me/bot?start=promo", payload = "promo"
         const triggerNode = nodes.find((n: any) => n.type === 'trigger' && (n.data.refCode === payload || (n.data.link && n.data.link.endsWith(payload))));
         if (triggerNode) {
           startNodeId = triggerNode.id;
@@ -959,13 +984,26 @@ async function startServer() {
             return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd;
           });
           if (commandNodes.length > 0) {
-            // Sort by Y position to prioritize the top-most node on the canvas
             commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));
-            // Try to find one that has an outgoing edge to prioritize connected commands
             const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
             startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
           }
         }
+      }
+
+      // 3. Check if waiting for message (only if not a command)
+      if (!startNodeId && chatData.scenarioState?.active) {
+        nextNodeId = chatData.scenarioState.replyNodeId;
+        
+        // Clear state
+        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+          'scenarioState.active': false
+        });
+        
+        if (nextNodeId) {
+          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
+        }
+        return; // Done processing this message
       }
 
       if (startNodeId) {
@@ -1076,10 +1114,10 @@ async function startServer() {
             inline_keyboard: keyboard.inline_keyboard.map((row: any[]) =>
               row.map((btn: any) => {
                 const tgBtn: any = { text: btn.text };
-                if (btn.type === 'url' && btn.url) {
-                  tgBtn.url = btn.url;
+                if (btn.url) {
+                  tgBtn.url = btn.url.startsWith('http') ? btn.url : `https://${btn.url}`;
                 } else {
-                  tgBtn.callback_data = btn.callback_data || btn.id;
+                  tgBtn.callback_data = btn.callback_data || btn.id || 'btn';
                 }
                 if (btn.color && btn.color !== 'default') {
                   tgBtn.color = btn.color;
@@ -1139,37 +1177,56 @@ async function startServer() {
           try {
             const vkApi = vk || new VK({ token: tokens.vk });
             
-            let sourceData: any = { value: mediaUrl };
-            
-            // Download the file first if it's a URL
-            if (mediaUrl.startsWith('http')) {
-              const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
-              sourceData = { value: Buffer.from(response.data, 'binary') };
-            } else if (mediaUrl.startsWith('data:')) {
-              const base64Data = mediaUrl.split(',')[1];
-              sourceData = { value: Buffer.from(base64Data, 'base64') };
-            }
-
-            if (mediaType === 'photo' || mediaUrl.match(/\.(jpg|jpeg|png|gif)$/i)) {
-              const photo = await vkApi.upload.messagePhoto({
-                source: sourceData,
-                peer_id: Number(chatId)
-              });
-              attachment = photo.toString();
+            // Check if it's already a VK attachment string (e.g., photo123_456, video123_456)
+            if (mediaUrl.match(/^(photo|video|audio|doc|wall|market)-?\d+_\d+/)) {
+              attachment = mediaUrl;
+            } else if (mediaUrl.includes('vk.com/video')) {
+              const match = mediaUrl.match(/video(-?\d+_\d+)/);
+              if (match) {
+                attachment = `video${match[1]}`;
+              } else {
+                messageText += `\n\n${mediaUrl}`;
+              }
+            } else if (mediaUrl.includes('vk.com/photo')) {
+              const match = mediaUrl.match(/photo(-?\d+_\d+)/);
+              if (match) {
+                attachment = `photo${match[1]}`;
+              } else {
+                messageText += `\n\n${mediaUrl}`;
+              }
             } else {
-              // For video or other types, try document upload
-              const doc = await vkApi.upload.messageDocument({
-                source: sourceData,
-                peer_id: Number(chatId)
-              });
-              attachment = doc.toString();
+              let sourceData: any = { value: mediaUrl };
+              
+              // Download the file first if it's a URL
+              if (mediaUrl.startsWith('http')) {
+                const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+                sourceData = { value: Buffer.from(response.data, 'binary') };
+              } else if (mediaUrl.startsWith('data:')) {
+                const base64Data = mediaUrl.split(',')[1];
+                sourceData = { value: Buffer.from(base64Data, 'base64') };
+              }
+
+              if (mediaType === 'photo' || mediaUrl.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                const photo = await vkApi.upload.messagePhoto({
+                  source: sourceData,
+                  peer_id: Number(chatId)
+                });
+                attachment = photo.toString();
+              } else {
+                // For video or other types, try document upload
+                const doc = await vkApi.upload.messageDocument({
+                  source: sourceData,
+                  peer_id: Number(chatId)
+                });
+                attachment = doc.toString();
+              }
             }
           } catch (e) {
             console.error('VK Media Upload Error:', e);
             // Fallback to text link
-            if (!mediaUrl.startsWith('data:')) {
+            if (!mediaUrl.startsWith('data:') && !attachment) {
               messageText += `\n\n${mediaUrl}`;
-            } else {
+            } else if (!attachment) {
               messageText += `\n\n[Медиафайл прикреплен]`;
             }
           }
@@ -1189,7 +1246,8 @@ async function startServer() {
           const vkButtons = keyboard.inline_keyboard.map((row: any[]) => 
             row.map(btn => {
               if (btn.url) {
-                return { action: { type: 'open_link', link: btn.url, label: btn.text } };
+                const link = btn.url.startsWith('http') ? btn.url : `https://${btn.url}`;
+                return { action: { type: 'open_link', link, label: btn.text } };
               }
               let btnColor = btn.color;
               if (!btnColor || btnColor === 'default') {
@@ -1435,10 +1493,13 @@ async function startServer() {
       const { message } = object;
       const text = message.text || '';
       const chatId = message.peer_id.toString();
-      const messageId = message.id.toString();
+      const messageId = (message.conversation_message_id || message.id).toString();
       
       // Save message
-      await saveMessage('vk', chatId, text, `User ${chatId}`, messageId);
+      const saved = await saveMessage('vk', chatId, text, `User ${chatId}`, messageId);
+      if (saved && activeUserId) {
+        await processScenario('vk', chatId, text, message.payload, activeUserId);
+      }
       return res.send('ok');
     }
     
@@ -1630,10 +1691,35 @@ async function startServer() {
     if (type === 'message_new') {
       const message = object.message;
       const chatId = message.peer_id.toString();
-      const text = message.text || '';
-      const messageId = message.id.toString();
+      let text = message.text || '';
+      const messageId = (message.conversation_message_id || message.id).toString();
       
       let username = `User ${chatId}`;
+      let mediaUrl = '';
+      let mediaType = '';
+
+      if (message.attachments && message.attachments.length > 0) {
+        const attachment = message.attachments[0];
+        if (attachment.type === 'photo') {
+          mediaType = 'photo';
+          const sizes = attachment.photo.sizes;
+          const largest = sizes.reduce((prev: any, current: any) => (prev.width > current.width) ? prev : current);
+          mediaUrl = largest.url;
+          if (!text) text = '[Фото]';
+        } else if (attachment.type === 'video') {
+          mediaType = 'video';
+          mediaUrl = `https://vk.com/video${attachment.video.owner_id}_${attachment.video.id}`;
+          if (!text) text = '[Видео]';
+        } else if (attachment.type === 'audio_message') {
+          mediaType = 'voice';
+          mediaUrl = attachment.audio_message.link_ogg || attachment.audio_message.link_mp3 || '';
+          if (!text) text = '[Голосовое сообщение]';
+        } else if (attachment.type === 'doc') {
+          mediaType = 'photo';
+          mediaUrl = attachment.doc.url || '';
+          if (!text) text = '[Документ]';
+        }
+      }
       
       // Try to fetch user info if VK instance is active
       if (vk) {
@@ -1648,9 +1734,9 @@ async function startServer() {
       }
       
       console.log(`Received VK message from ${username} (${chatId}): ${text}`);
-      await saveMessage('vk', chatId, text, username, messageId);
-      if (activeUserId) {
-        await processScenario('vk', chatId, text, null, activeUserId);
+      const saved = await saveMessage('vk', chatId, text, username, messageId, undefined, undefined, mediaUrl, mediaType);
+      if (saved && activeUserId) {
+        await processScenario('vk', chatId, text, message.payload, activeUserId);
       }
       res.send('ok');
     } else if (type === 'message_event') {

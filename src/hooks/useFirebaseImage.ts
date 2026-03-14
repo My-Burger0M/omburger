@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -82,10 +82,17 @@ export function useFirebaseImage(imageKey: string) {
       setUrl(base64String);
 
       const docRef = doc(db, 'users', currentUser.uid);
-      await setDoc(docRef, { 
-        images: { 
-          [imageKey]: base64String 
-        } 
+      const docSnap = await getDoc(docRef);
+      let existingImages = {};
+      if (docSnap.exists() && docSnap.data().images) {
+        existingImages = docSnap.data().images;
+      }
+      
+      await setDoc(docRef, {
+        images: {
+          ...existingImages,
+          [imageKey]: base64String
+        }
       }, { merge: true });
     } catch (error) {
       console.error("Error uploading image:", error);

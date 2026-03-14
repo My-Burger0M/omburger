@@ -57,8 +57,12 @@ export default function Login() {
       console.error('Login error:', err);
       if (err.code === 'auth/network-request-failed') {
         setError('Ошибка сети. Пожалуйста, отключите VPN, проверьте подключение к интернету или отключите блокировщик рекламы.');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Неверный email или пароль. Пожалуйста, проверьте введенные данные.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Слишком много неудачных попыток входа. Пожалуйста, подождите немного и попробуйте снова.');
       } else {
-        setError(`Ошибка входа: ${err.message || 'Проверьте email и пароль'}`);
+        setError('Произошла ошибка при входе. Проверьте email и пароль.');
       }
     } finally {
       setLoading(false);
@@ -66,8 +70,16 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4 text-white font-sans">
-      <div className="bg-[#1a1a1a] p-8 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 text-white font-sans relative overflow-hidden"
+      style={{
+        backgroundImage: 'url("https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop")',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+      <div className="bg-[#1a1a1a]/80 backdrop-blur-md p-8 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl relative z-10">
         <div className="flex justify-center mb-8 relative">
           <label className="cursor-pointer group relative">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center overflow-hidden shadow-lg transition-transform group-hover:scale-105">
