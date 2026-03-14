@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Handle, Position, useUpdateNodeInternals, NodeProps } from '@xyflow/react';
+import React, { useEffect } from 'react';
+import { Handle, Position, useUpdateNodeInternals, NodeProps, Node } from '@xyflow/react';
 import { Plus, X, MessageSquare } from 'lucide-react';
 
 export type InlineButton = {
@@ -7,13 +7,15 @@ export type InlineButton = {
   text: string;
 };
 
-export type MessageNodeData = {
+export type MessageNodeData = Record<string, unknown> & {
   text: string;
   buttons: InlineButton[][];
   onUpdate: (id: string, data: Partial<MessageNodeData>) => void;
 };
 
-export default function MessageNode({ id, data }: NodeProps<MessageNodeData>) {
+type MessageNodeType = Node<MessageNodeData, 'message'>;
+
+export default function MessageNode({ id, data }: NodeProps<MessageNodeType>) {
   const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {

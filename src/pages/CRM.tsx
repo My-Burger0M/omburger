@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, deleteField } from 'firebase/firestore';
-import { User, Tag, Trash2, Search, Filter, Plus, X } from 'lucide-react';
+import { collection, getDocs, doc, updateDoc, deleteField, addDoc, serverTimestamp } from 'firebase/firestore';
+import { User, Tag, Trash2, Search, Filter, Plus, X, Send } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function CRM() {
   const [users, setUsers] = useState<any[]>([]);
@@ -12,6 +13,47 @@ export default function CRM() {
   // Tagging
   const [newTag, setNewTag] = useState('');
   const [newTagColor, setNewTagColor] = useState('#a855f7');
+
+  const { currentUser } = useAuth();
+
+  const sendToTelegram = async (user: any) => {
+    if (!currentUser) return;
+    try {
+      const tags = user.tags && user.tags.length > 0 ? user.tags.join(', ') : 'Нет тегов';
+      const name = user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Без имени';
+      const platform = user.platform === 'tg' ? 'Telegram' : 'VK';
+      const id = user.id;
+      
+      let tenure = 'Неизвестно';
+      if (user.createdAt) {
+        const createdDate = user.createdAt.toDate ? user.createdAt.toDate() : new Date(user.createdAt);
+        const now = new Date();
+        const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+        tenure = `${diffDays} дней`;
+      }
+
+      const text = `👤 *Информация о пользователе*\n\n` +
+                   `*Имя:* ${name}\n` +
+                   `*Платформа:* ${platform}\n` +
+                   `*ID:* \`${id}\`\n` +
+                   `*Теги:* ${tags}\n` +
+                   `*С нами:* ${tenure}\n` +
+                   `*Активность:* ${user.unreadCount || 0} непрочитанных сообщений`;
+
+      await addDoc(collection(db, 'scheduled_notifications'), {
+        userId: currentUser.uid,
+        text: text,
+        status: 'pending',
+        scheduledAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      });
+      
+      alert('Уведомление отправлено в Telegram!');
+    } catch (error) {
+      console.error('Error sending to telegram:', error);
+      alert('Ошибка при отправке уведомления.');
+    }
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -171,6 +213,14 @@ export default function CRM() {
                   </div>
                 </div>
               </div>
+              <button
+                onClick={() => sendToTelegram(selectedUser)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                title="Отправить информацию в Telegram"
+              >
+                <Send size={18} />
+                <span>Отправить инфо</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-6 mb-8">

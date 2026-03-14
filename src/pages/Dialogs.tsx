@@ -421,8 +421,8 @@ export default function Dialogs() {
         if (note.keyboard && Array.isArray(note.keyboard)) {
             setKeyboardRows(note.keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || [])));
             setShowKeyboardBuilder(true);
-        } else if (note.keyboard && note.keyboard.inline_keyboard) {
-            setKeyboardRows(note.keyboard.inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || [])));
+        } else if (note.keyboard && (note.keyboard as any).inline_keyboard) {
+            setKeyboardRows((note.keyboard as any).inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || [])));
             setShowKeyboardBuilder(true);
         } else {
             setKeyboardRows([]);

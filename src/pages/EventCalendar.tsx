@@ -63,18 +63,28 @@ export default function EventCalendar() {
   const [chatOptions, setChatOptions] = useState<ChatOption[]>([]);
 
   // Fetch Events
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
   useEffect(() => {
     if (!currentUser) return;
+    let isOffline = false;
+    const timeout = setTimeout(() => { isOffline = true; }, 1000);
+
     const q = query(collection(db, 'users', currentUser.uid, 'events'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+      if (snapshot.metadata.fromCache && !isOffline && !snapshot.metadata.hasPendingWrites && isInitialLoad) {
+        return; // Wait for server sync to avoid flickering deleted events
+      }
+      clearTimeout(timeout);
+      setIsInitialLoad(false);
       const eventsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as CalendarEvent[];
       setEvents(eventsData);
     });
-    return () => unsubscribe();
-  }, [currentUser]);
+    return () => { unsubscribe(); clearTimeout(timeout); };
+  }, [currentUser, isInitialLoad]);
 
   // Fetch Chats for notification
   useEffect(() => {

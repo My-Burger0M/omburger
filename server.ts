@@ -112,7 +112,7 @@ async function startServer() {
       if (context.isOutbox) return;
       let text = context.text || '';
       const chatId = context.senderId.toString();
-      const messageId = (context.conversationMessageId || context.id).toString();
+      const messageId = (context.id || context.conversationMessageId).toString();
       let username = `User ${chatId}`;
       let avatar = '';
       let mediaUrl = '';
@@ -157,7 +157,7 @@ async function startServer() {
       const saved = await saveMessage('vk', chatId, text, username, messageId, avatar, undefined, mediaUrl, mediaType);
       
       if (saved && userId) {
-        const payload = context.messagePayload?.ref || (text.startsWith('/start ') ? text.split(' ')[1] : null);
+        const payload = context.messagePayload || (text.startsWith('/start ') ? text.split(' ')[1] : null);
         await processScenario('vk', chatId, text, payload, userId);
       }
     });
@@ -814,7 +814,7 @@ async function startServer() {
               groupId = groupId.substring(1);
             }
             const isMember = await vkApi.api.groups.isMember({ group_id: groupId, user_id: parseInt(chatId) });
-            isSubscribed = isMember === 1 || isMember === true;
+            isSubscribed = isMember === 1 || (isMember as any) === true;
           }
         } catch (e: any) {
           console.error('Error checking subscription:', e);
@@ -1494,7 +1494,7 @@ async function startServer() {
       const { message } = object;
       const text = message.text || '';
       const chatId = message.peer_id.toString();
-      const messageId = (message.conversation_message_id || message.id).toString();
+      const messageId = (message.id || message.conversation_message_id).toString();
       
       // Save message
       const saved = await saveMessage('vk', chatId, text, `User ${chatId}`, messageId);
@@ -1693,7 +1693,7 @@ async function startServer() {
       const message = object.message;
       const chatId = message.peer_id.toString();
       let text = message.text || '';
-      const messageId = (message.conversation_message_id || message.id).toString();
+      const messageId = (message.id || message.conversation_message_id).toString();
       
       let username = `User ${chatId}`;
       let mediaUrl = '';
