@@ -930,7 +930,38 @@ async function startServer() {
         }
       }
       
-      // 2. Check if it's a button click globally
+      if (!startNodeId) {
+        const txt = text.toLowerCase().trim();
+        const matchValLower = typeof matchValue === 'string' ? matchValue.toLowerCase().trim() : '';
+        
+        // Find all potential start nodes (StartNode or CommandNode matching the text)
+        const potentialStartNodes = nodes.filter((n: any) => {
+          if (n.type === 'start' && (txt === '/start' || txt === 'начать' || txt === 'start' || matchValLower === 'start' || matchValLower === 'начать')) {
+            return true;
+          }
+          if (n.type === 'command' && n.data.command) {
+            const cmd = n.data.command.toLowerCase().trim();
+            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd || matchValLower === cmd || matchValLower === `/${cmd}`;
+          }
+          return false;
+        });
+
+        if (potentialStartNodes.length > 0) {
+          // Prioritize nodes that are connected to something
+          const connectedNodes = potentialStartNodes.filter((n: any) => edges.some((e: any) => e.source === n.id));
+          if (connectedNodes.length > 0) {
+            // If multiple connected, prefer StartNode over CommandNode for /start
+            const startNode = connectedNodes.find((n: any) => n.type === 'start');
+            startNodeId = startNode ? startNode.id : connectedNodes[0].id;
+          } else {
+            // Fallback to unconnected node (will just stop immediately, but it's the correct node)
+            const startNode = potentialStartNodes.find((n: any) => n.type === 'start');
+            startNodeId = startNode ? startNode.id : potentialStartNodes[0].id;
+          }
+        }
+      }
+
+      // 2. Check if it's a button click globally (only if not a start/command)
       if (!startNodeId) {
         for (const node of nodes) {
           if (node.type === 'message' && node.data.keyboard) {
@@ -965,31 +996,6 @@ async function startServer() {
             await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
           }
           return; // Done processing this message
-        }
-      }
-
-      if (!startNodeId) {
-        const txt = text.toLowerCase().trim();
-        const matchValLower = typeof matchValue === 'string' ? matchValue.toLowerCase().trim() : '';
-        if (txt === '/start' || txt === 'начать' || txt === 'start' || matchValLower === 'start' || matchValLower === 'начать') {
-          const startNode = nodes.find((n: any) => n.type === 'start');
-          if (startNode) {
-            startNodeId = startNode.id;
-          }
-        }
-        
-        if (!startNodeId) {
-          // Check for command node
-          const commandNodes = nodes.filter((n: any) => {
-            if (n.type !== 'command' || !n.data.command) return false;
-            const cmd = n.data.command.toLowerCase().trim();
-            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd || matchValLower === cmd || matchValLower === `/${cmd}`;
-          });
-          if (commandNodes.length > 0) {
-            commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));
-            const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
-            startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
-          }
         }
       }
 
@@ -1120,9 +1126,6 @@ async function startServer() {
                   tgBtn.url = btn.url.startsWith('http') ? btn.url : `https://${btn.url}`;
                 } else {
                   tgBtn.callback_data = btn.callback_data || btn.id || 'btn';
-                }
-                if (btn.color && btn.color !== 'default') {
-                  tgBtn.color = btn.color;
                 }
                 return tgBtn;
               })
@@ -1823,6 +1826,9 @@ async function startServer() {
             sentAt: serverTimestamp()
           });
           console.log(`Scheduled notification sent: ${docSnap.id}`);
+          
+          // Add delay to respect Telegram rate limits (max 1 msg/sec to same chat)
+          await new Promise(resolve => setTimeout(resolve, 1500));
         } catch (err: any) {
           console.error(`Error sending scheduled notification ${docSnap.id}:`, err.message);
           await updateDoc(doc(db, 'scheduled_notifications', docSnap.id), {

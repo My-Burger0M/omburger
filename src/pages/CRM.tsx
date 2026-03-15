@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, deleteField, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteField, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { User, Tag, Trash2, Search, Filter, Plus, X, Send, CheckCircle, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -34,48 +34,79 @@ export default function CRM() {
     if (!currentUser || usersToSend.length === 0) return;
     setIsSendingInfo(true);
     try {
-      const batchPromises = usersToSend.map(async (user) => {
-        const tags = user.tags && user.tags.length > 0 ? user.tags.join(', ') : 'Нет тегов';
-        const name = user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Без имени';
-        const platform = user.platform === 'tg' ? 'Telegram' : 'VK';
-        const id = user.id;
+      // Chunk users into groups of 10 to combine into single messages
+      // This reduces the number of messages and avoids rate limits
+      const chunks = [];
+      for (let i = 0; i < usersToSend.length; i += 10) {
+        chunks.push(usersToSend.slice(i, i + 10));
+      }
+
+      let batch = writeBatch(db);
+      let batchCount = 0;
+
+      for (const chunk of chunks) {
+        let combinedText = '';
         
-        let tenure = 'Неизвестно';
-        let firstTouch = 'Неизвестно';
-        if (user.createdAt) {
-          const createdDate = user.createdAt.toDate ? user.createdAt.toDate() : new Date(user.createdAt.seconds ? user.createdAt.seconds * 1000 : user.createdAt);
-          const now = new Date();
-          const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-          tenure = `${diffDays} дней`;
-          firstTouch = createdDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
+        chunk.forEach((user, index) => {
+          const tags = user.tags && user.tags.length > 0 ? user.tags.join(', ') : 'Нет тегов';
+          const name = user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Без имени';
+          const platform = user.platform === 'tg' ? 'Telegram' : 'VK';
+          const id = user.id;
+          
+          let tenure = 'Неизвестно';
+          let firstTouch = 'Неизвестно';
+          if (user.createdAt) {
+            const createdDate = user.createdAt.toDate ? user.createdAt.toDate() : new Date(user.createdAt.seconds ? user.createdAt.seconds * 1000 : user.createdAt);
+            const now = new Date();
+            const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+            tenure = `${diffDays} дней`;
+            firstTouch = createdDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          }
 
-        let lastActive = 'Неизвестно';
-        if (user.lastMessageAt) {
-          const lastDate = user.lastMessageAt.toDate ? user.lastMessageAt.toDate() : new Date(user.lastMessageAt.seconds ? user.lastMessageAt.seconds * 1000 : user.lastMessageAt);
-          lastActive = lastDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
+          let lastActive = 'Неизвестно';
+          if (user.lastMessageAt) {
+            const lastDate = user.lastMessageAt.toDate ? user.lastMessageAt.toDate() : new Date(user.lastMessageAt.seconds ? user.lastMessageAt.seconds * 1000 : user.lastMessageAt);
+            lastActive = lastDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          }
 
-        const text = `👤 *Информация о пользователе*\n\n` +
-                     `*Имя:* ${name}\n` +
-                     `*Платформа:* ${platform}\n` +
-                     `*ID:* \`${id}\`\n` +
-                     `*Теги:* ${tags}\n` +
-                     `*Первое касание:* ${firstTouch}\n` +
-                     `*Последняя активность:* ${lastActive}\n` +
-                     `*С нами:* ${tenure}\n` +
-                     `*Всего сообщений:* ${user.messageCount || 0}`;
+          const text = `👤 *Информация о пользователе*\n\n` +
+                       `*Имя:* ${name}\n` +
+                       `*Платформа:* ${platform}\n` +
+                       `*ID:* \`${id}\`\n` +
+                       `*Теги:* ${tags}\n` +
+                       `*Первое касание:* ${firstTouch}\n` +
+                       `*Последняя активность:* ${lastActive}\n` +
+                       `*С нами:* ${tenure}\n` +
+                       `*Всего сообщений:* ${user.messageCount || 0}`;
+          
+          combinedText += text;
+          if (index < chunk.length - 1) {
+            combinedText += '\n\n---\n\n';
+          }
+        });
 
-        return addDoc(collection(db, 'scheduled_notifications'), {
+        const newDocRef = doc(collection(db, 'scheduled_notifications'));
+        batch.set(newDocRef, {
           userId: currentUser.uid,
-          text: text,
+          text: combinedText,
           status: 'pending',
           scheduledAt: serverTimestamp(),
           createdAt: serverTimestamp()
         });
-      });
+        
+        batchCount++;
+        // Firestore batch limit is 500 operations
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
 
-      await Promise.all(batchPromises);
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+
       showToast('Успех', `Информация по ${usersToSend.length} пользовател${usersToSend.length === 1 ? 'ю' : 'ям'} отправлена!`);
       setShowSortModal(false);
       setSelectedUsersForInfo([]);

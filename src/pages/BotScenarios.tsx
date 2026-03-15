@@ -424,44 +424,8 @@ export default function BotScenarios() {
     const newState = !botActive;
     setBotActive(newState);
     if (!currentUser) return;
-    
-    // Save the entire scenario state when toggling
-    const serializedNodes = nodes.map(node => {
-      if (node.type === 'message') {
-        const { keyboard, ...restData } = node.data;
-        const cleanedKeyboard = keyboard.map((row: any) => {
-          const buttons = row.buttons || row;
-          return {
-            buttons: buttons.map((btn: any) => ({
-              id: btn.id,
-              text: btn.text,
-              url: btn.url || '',
-              callback_data: btn.callback_data || btn.id
-            }))
-          };
-        });
-        return {
-          ...node,
-          data: {
-            ...restData,
-            keyboard: cleanedKeyboard
-          }
-        };
-      }
-      return node;
-    });
-
-    const sanitizedNodes = sanitizeForFirestore(serializedNodes);
-    const sanitizedEdges = sanitizeForFirestore(edges);
-
     const docRef = doc(db, 'users', currentUser.uid, 'settings', `scenario_${selectedPlatform}`);
-    await setDoc(docRef, { 
-      nodes: sanitizedNodes,
-      edges: sanitizedEdges,
-      isActive: newState 
-    }, { merge: true });
-    
-    showToast('Успех', newState ? 'Бот запущен и сценарий сохранен!' : 'Бот остановлен!');
+    await setDoc(docRef, { isActive: newState }, { merge: true });
   };
 
   const onConnect = useCallback(

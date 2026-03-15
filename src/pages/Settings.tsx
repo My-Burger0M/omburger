@@ -426,7 +426,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Logo Instructions Panel removed */}
+      {/* Logo Instructions Panel Removed */}
 
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-8 space-y-8">
         
