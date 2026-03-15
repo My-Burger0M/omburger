@@ -229,6 +229,9 @@ const ConditionNode = ({ data }: { data: any }) => (
       <span className="text-xs font-bold text-orange-100">{data.label || 'Проверка подписки'}</span>
     </div>
     <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
+      <div className="text-[10px] text-orange-300 italic leading-tight text-center mb-1">
+        Подключайте к инлайн-кнопке (напр. "Я подписался"), иначе проверка сработает мгновенно.
+      </div>
       <div className="truncate text-blue-300 font-mono text-[10px] bg-blue-500/10 p-1.5 rounded text-center">
         {data.tgGroupUsername ? `TG: ${data.tgGroupUsername}` : 'TG: Не указана'}
       </div>
@@ -274,7 +277,6 @@ export default function BotScenarios() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
   const [botActive, setBotActive] = useState(false);
   const [launchError, setLaunchError] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -418,59 +420,6 @@ export default function BotScenarios() {
     }
   };
 
-  const handleLaunch = async () => {
-    if (!currentUser) return;
-    if (!window.confirm('Вы уверены, что хотите запустить бота по этому сценарию?')) return;
-    setIsLaunching(true);
-    setLaunchError('');
-    try {
-      if (nodes.length <= 1) {
-        throw new Error('Сценарий пуст. Добавьте узлы перед запуском.');
-      }
-
-      // Check bot status on the server
-      const response = await fetch('/api/bot/status');
-      const status = await response.json();
-
-      if (selectedPlatform === 'tg' && !status.tg) {
-        throw new Error(status.lastTgError || 'Бот Telegram не запущен. Проверьте токен в настройках.');
-      }
-      if (selectedPlatform === 'vk' && !status.vk) {
-        throw new Error(status.lastVkError || 'Бот ВКонтакте не запущен. Проверьте токен в настройках.');
-      }
-
-      setBotActive(true);
-      const docRef = doc(db, 'users', currentUser.uid, 'settings', `scenario_${selectedPlatform}`);
-      
-      // Serialize keyboards
-      const serializedNodes = nodes.map(node => {
-        if (node.data.keyboard && Array.isArray(node.data.keyboard)) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              keyboard: node.data.keyboard.map(row => ({ buttons: Array.isArray(row) ? row : (row.buttons || []) }))
-            }
-          };
-        }
-        return node;
-      });
-
-      const sanitizedNodes = sanitizeForFirestore(serializedNodes);
-      const sanitizedEdges = sanitizeForFirestore(edges);
-
-      await setDoc(docRef, { isActive: true, nodes: sanitizedNodes, edges: sanitizedEdges }, { merge: true });
-      showToast('Успех', 'Бот успешно запущен по текущему сценарию!');
-    } catch (error: any) {
-      console.error("Launch error:", error);
-      setLaunchError(error.message || 'Не удалось запустить бота. Проверьте токены в настройках.');
-      showToast('Ошибка', error.message || 'Не удалось запустить бота.', 'error');
-      setBotActive(false);
-    } finally {
-      setIsLaunching(false);
-    }
-  };
-
   const handleToggleActive = async () => {
     const newState = !botActive;
     setBotActive(newState);
@@ -579,13 +528,6 @@ export default function BotScenarios() {
             className="flex-1 md:flex-none justify-center bg-[#1a1a1a] hover:bg-[#222] text-white px-4 py-2 rounded-xl flex items-center gap-2 border border-white/10 transition-colors disabled:opacity-50"
           >
             <Save size={16} /> {isSaving ? '...' : 'Сохранить'}
-          </button>
-          <button 
-            onClick={handleLaunch}
-            disabled={isLaunching}
-            className="flex-1 md:flex-none justify-center bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50 font-medium"
-          >
-            <Power size={16} /> {isLaunching ? 'Запуск...' : 'Запустить'}
           </button>
         </div>
       </div>

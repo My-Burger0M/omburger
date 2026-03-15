@@ -903,7 +903,8 @@ async function startServer() {
       const nodes = deserializeFromFirestore(scenario.nodes || []);
       const edges = deserializeFromFirestore(scenario.edges || []);
 
-      // 1. Check if it's a button click globally
+      // 1. Check if it's a command or start
+      let startNodeId = null;
       let isButtonClick = false;
       let matchedButtonEdge = null;
       let nextNodeId = null;
@@ -921,44 +922,6 @@ async function startServer() {
           matchValue = (payload as any).cmd || (payload as any).command || JSON.stringify(payload);
         }
       }
-
-      for (const node of nodes) {
-        if (node.type === 'message' && node.data.keyboard) {
-          for (let i = 0; i < node.data.keyboard.length; i++) {
-            const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
-            for (let j = 0; j < row.length; j++) {
-              const btn = row[j];
-              if (btn.callback_data === matchValue || btn.text === matchValue || btn.id === matchValue) {
-                isButtonClick = true;
-                const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
-                if (edge) {
-                  matchedButtonEdge = edge;
-                }
-                break;
-              }
-            }
-            if (isButtonClick) break;
-          }
-        }
-        if (isButtonClick) break;
-      }
-
-      if (isButtonClick) {
-        nextNodeId = matchedButtonEdge ? matchedButtonEdge.target : null;
-        
-        // Clear state
-        await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
-          'scenarioState.active': false
-        });
-        
-        if (nextNodeId) {
-          await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
-        }
-        return; // Done processing this message
-      }
-
-      // 2. Check if it's a command or start
-      let startNodeId = null;
 
       if (payload) {
         const triggerNode = nodes.find((n: any) => n.type === 'trigger' && (n.data.refCode === payload || (n.data.link && n.data.link.endsWith(payload))));
@@ -992,7 +955,45 @@ async function startServer() {
         }
       }
 
-      // 3. Check if waiting for message (only if not a command)
+      // 2. Check if it's a button click globally (only if not a start/command)
+      if (!startNodeId) {
+        for (const node of nodes) {
+          if (node.type === 'message' && node.data.keyboard) {
+            for (let i = 0; i < node.data.keyboard.length; i++) {
+              const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
+              for (let j = 0; j < row.length; j++) {
+                const btn = row[j];
+                if (btn.callback_data === matchValue || btn.text === matchValue || btn.id === matchValue) {
+                  isButtonClick = true;
+                  const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
+                  if (edge) {
+                    matchedButtonEdge = edge;
+                  }
+                  break;
+                }
+              }
+              if (isButtonClick) break;
+            }
+          }
+          if (isButtonClick) break;
+        }
+
+        if (isButtonClick) {
+          nextNodeId = matchedButtonEdge ? matchedButtonEdge.target : null;
+          
+          // Clear state
+          await updateDoc(doc(db, 'chats', `${platform}_${chatId}`), {
+            'scenarioState.active': false
+          });
+          
+          if (nextNodeId) {
+            await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
+          }
+          return; // Done processing this message
+        }
+      }
+
+      // 3. Check if waiting for message (only if not a command and not a button)
       if (!startNodeId && chatData.scenarioState?.active) {
         nextNodeId = chatData.scenarioState.replyNodeId;
         

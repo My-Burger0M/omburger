@@ -182,13 +182,19 @@ export default function Mailings() {
     setMessageText(note.text || '');
     setMediaUrl(note.mediaUrl || '');
     setMediaType(note.mediaType || 'photo');
-    if (note.keyboard && Array.isArray(note.keyboard)) {
-      const normalizedKeyboard = note.keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
-      setKeyboard(normalizedKeyboard);
-    } else if (note.keyboard && note.keyboard.inline_keyboard) {
-      const normalizedKeyboard = note.keyboard.inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
-      setKeyboard(normalizedKeyboard);
-    } else {
+    
+    try {
+      if (note.keyboard && Array.isArray(note.keyboard)) {
+        const normalizedKeyboard = note.keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
+        setKeyboard(normalizedKeyboard);
+      } else if (note.keyboard && note.keyboard.inline_keyboard && Array.isArray(note.keyboard.inline_keyboard)) {
+        const normalizedKeyboard = note.keyboard.inline_keyboard.map((row: any) => Array.isArray(row) ? row : (row.buttons || []));
+        setKeyboard(normalizedKeyboard);
+      } else {
+        setKeyboard([]);
+      }
+    } catch (e) {
+      console.error("Error parsing keyboard from note:", e);
       setKeyboard([]);
     }
     setShowNotesModal(false);
@@ -687,7 +693,17 @@ export default function Mailings() {
                 
                 <div className="flex flex-col gap-2 mt-3">
                   {keyboard.map((row, rIndex) => (
-                    <div key={rIndex} className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                    <div key={rIndex} className="flex gap-2 overflow-x-auto custom-scrollbar pb-1 items-center">
+                      {row.length === 0 && (
+                        <div className="text-xs text-gray-500 italic py-1.5 flex items-center gap-2">
+                          Пустой ряд (добавьте кнопку)
+                          <button onClick={() => {
+                            const newKeyboard = [...keyboard];
+                            newKeyboard.splice(rIndex, 1);
+                            setKeyboard(newKeyboard);
+                          }} className="hover:text-red-400"><X size={12} /></button>
+                        </div>
+                      )}
                       {row.map((btn, bIndex) => (
                         <div key={bIndex} className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-2 whitespace-nowrap ${
                           btn.color === 'positive' ? 'bg-green-900/30 border-green-500/30 text-green-400' :

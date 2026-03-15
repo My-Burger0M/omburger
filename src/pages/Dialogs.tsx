@@ -115,6 +115,33 @@ const deserializeFromFirestore = (obj: any): any => {
   return obj;
 };
 
+const Avatar = ({ src, alt, fallback, className, fallbackClassName }: { src?: string, alt: string, fallback: string, className: string, fallbackClassName: string }) => {
+  const [error, setError] = useState(false);
+
+  // Reset error state if src changes
+  useEffect(() => {
+    setError(false);
+  }, [src]);
+
+  if (!src || error) {
+    return (
+      <div className={fallbackClassName}>
+        {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={src} 
+      alt={alt} 
+      className={className} 
+      referrerPolicy="no-referrer"
+      onError={() => setError(true)}
+    />
+  );
+};
+
 export default function Dialogs() {
   const { currentUser } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
@@ -839,21 +866,13 @@ export default function Dialogs() {
             >
               <div className="flex gap-3">
                 <div className="relative shrink-0">
-                  {chat.avatar ? (
-                    <img 
-                      src={chat.avatar} 
-                      alt={chat.username} 
-                      className="w-12 h-12 rounded-full object-cover bg-[#2a2a2a]" 
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                      }}
-                    />
-                  ) : null}
-                  <div className={`w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-400 font-bold text-lg ${chat.avatar ? 'hidden' : ''}`}>
-                    {(chat.customName || chat.displayName || chat.username || '?')[0].toUpperCase()}
-                  </div>
+                  <Avatar
+                    src={chat.avatar}
+                    alt={chat.username}
+                    className="w-12 h-12 rounded-full object-cover bg-[#2a2a2a]"
+                    fallbackClassName="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-400 font-bold text-lg"
+                    fallback={(chat.customName || chat.displayName || chat.username || '?')[0].toUpperCase()}
+                  />
                   <div className="absolute -bottom-1 -right-1 bg-[#111] rounded-full p-0.5">
                      {chat.platform === 'tg' && <div className="bg-cyan-500/20 text-cyan-400 p-0.5 rounded-full"><Send size={10} /></div>}
                      {chat.platform === 'vk' && <div className="bg-blue-500/20 text-blue-400 p-0.5 rounded-full text-[8px] font-bold px-1">VK</div>}
@@ -918,20 +937,13 @@ export default function Dialogs() {
               className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
               onClick={() => setProfileModalOpen(true)}
             >
-              {selectedChat.avatar ? (
-                <img 
-                  src={selectedChat.avatar} 
-                  className="w-10 h-10 rounded-full object-cover" 
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-              ) : null}
-              <div className={`w-10 h-10 rounded-full bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center text-white font-bold ${selectedChat.avatar ? 'hidden' : ''}`}>
-                {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
-              </div>
+              <Avatar
+                src={selectedChat.avatar}
+                alt={selectedChat.username}
+                className="w-10 h-10 rounded-full object-cover"
+                fallbackClassName="w-10 h-10 rounded-full bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center text-white font-bold"
+                fallback={(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
+              />
               <div>
                 <div className="font-bold text-gray-100 text-sm flex items-center gap-2">
                   {selectedChat.customName || selectedChat.displayName || selectedChat.username}
@@ -1206,7 +1218,17 @@ export default function Dialogs() {
                     )}
                     {keyboardRows.map((row, rIndex) => (
                       <div key={rIndex} className="flex gap-2 items-center bg-[#1a1a1a] p-2 rounded-lg border border-white/5">
-                        <div className="flex-1 flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                        <div className="flex-1 flex gap-2 overflow-x-auto pb-1 custom-scrollbar items-center">
+                          {row.length === 0 && (
+                            <div className="text-xs text-gray-500 italic py-1.5 flex items-center gap-2">
+                              Пустой ряд (добавьте кнопку)
+                              <button onClick={() => {
+                                const newRows = [...keyboardRows];
+                                newRows.splice(rIndex, 1);
+                                setKeyboardRows(newRows);
+                              }} className="hover:text-red-400"><X size={12} /></button>
+                            </div>
+                          )}
                           {row.map((btn, bIndex) => (
                             <div 
                                 key={bIndex} 
@@ -1655,20 +1677,13 @@ export default function Dialogs() {
 
                   <div className="flex flex-col items-center mb-8">
                     <div className="w-24 h-24 rounded-full bg-[#1a1a1a] mb-4 overflow-hidden border-2 border-purple-500/20">
-                      {selectedChat.avatar ? (
-                        <img 
-                          src={selectedChat.avatar} 
-                          className="w-full h-full object-cover" 
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-full h-full flex items-center justify-center text-3xl font-bold text-gray-500 ${selectedChat.avatar ? 'hidden' : ''}`}>
-                        {(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
-                      </div>
+                      <Avatar
+                        src={selectedChat.avatar}
+                        alt={selectedChat.username}
+                        className="w-full h-full object-cover"
+                        fallbackClassName="w-full h-full flex items-center justify-center text-3xl font-bold text-gray-500"
+                        fallback={(selectedChat.customName || selectedChat.displayName || selectedChat.username)[0].toUpperCase()}
+                      />
                     </div>
                     
                     {isRenaming ? (
