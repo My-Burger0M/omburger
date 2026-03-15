@@ -426,26 +426,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Logo Instructions Panel */}
-      <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 space-y-4 mb-8">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          <Activity className="text-pink-500" />
-          Настройка логотипа
-        </h2>
-        <div className="bg-[#2a2a2a] p-4 rounded-xl text-sm text-gray-300 space-y-3">
-          <p>
-            Для изменения логотипа в левом верхнем углу (глобус и текст "OM УПРАВЛЕНИЕ"), вам необходимо заменить файл в папке проекта.
-          </p>
-          <ul className="list-disc pl-5 space-y-1 text-gray-400">
-            <li>Подготовьте изображение с вашим логотипом.</li>
-            <li>Рекомендуемый формат: <b>SVG</b> или <b>PNG</b> с прозрачным фоном.</li>
-            <li>Рекомендуемый размер: высота около <b>32px</b> (ширина может быть любой, пропорционально).</li>
-            <li>Назовите файл <code className="bg-black/30 px-1.5 py-0.5 rounded text-pink-400">logo.svg</code> или <code className="bg-black/30 px-1.5 py-0.5 rounded text-pink-400">logo.png</code>.</li>
-            <li>Поместите файл в папку <code className="bg-black/30 px-1.5 py-0.5 rounded text-pink-400">public/</code> в корне вашего проекта.</li>
-            <li>Затем обновите компонент <code className="bg-black/30 px-1.5 py-0.5 rounded text-pink-400">Sidebar.tsx</code>, чтобы он использовал ваш новый файл (например, <code className="bg-black/30 px-1.5 py-0.5 rounded text-pink-400">&lt;img src="/logo.svg" alt="Logo" className="h-8" /&gt;</code>).</li>
-          </ul>
-        </div>
-      </div>
+      {/* Logo Instructions Panel removed */}
 
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-8 space-y-8">
         

@@ -930,32 +930,7 @@ async function startServer() {
         }
       }
       
-      if (!startNodeId) {
-        const txt = text.toLowerCase().trim();
-        const matchValLower = typeof matchValue === 'string' ? matchValue.toLowerCase().trim() : '';
-        if (txt === '/start' || txt === 'начать' || txt === 'start' || matchValLower === 'start' || matchValLower === 'начать') {
-          const startNode = nodes.find((n: any) => n.type === 'start');
-          if (startNode) {
-            startNodeId = startNode.id;
-          }
-        }
-        
-        if (!startNodeId) {
-          // Check for command node
-          const commandNodes = nodes.filter((n: any) => {
-            if (n.type !== 'command' || !n.data.command) return false;
-            const cmd = n.data.command.toLowerCase().trim();
-            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd || matchValLower === cmd || matchValLower === `/${cmd}`;
-          });
-          if (commandNodes.length > 0) {
-            commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));
-            const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
-            startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
-          }
-        }
-      }
-
-      // 2. Check if it's a button click globally (only if not a start/command)
+      // 2. Check if it's a button click globally
       if (!startNodeId) {
         for (const node of nodes) {
           if (node.type === 'message' && node.data.keyboard) {
@@ -990,6 +965,31 @@ async function startServer() {
             await runFlow(userId, platform, chatId, nextNodeId, nodes, edges);
           }
           return; // Done processing this message
+        }
+      }
+
+      if (!startNodeId) {
+        const txt = text.toLowerCase().trim();
+        const matchValLower = typeof matchValue === 'string' ? matchValue.toLowerCase().trim() : '';
+        if (txt === '/start' || txt === 'начать' || txt === 'start' || matchValLower === 'start' || matchValLower === 'начать') {
+          const startNode = nodes.find((n: any) => n.type === 'start');
+          if (startNode) {
+            startNodeId = startNode.id;
+          }
+        }
+        
+        if (!startNodeId) {
+          // Check for command node
+          const commandNodes = nodes.filter((n: any) => {
+            if (n.type !== 'command' || !n.data.command) return false;
+            const cmd = n.data.command.toLowerCase().trim();
+            return txt === cmd || txt === `/${cmd}` || `/${txt}` === cmd || matchValLower === cmd || matchValLower === `/${cmd}`;
+          });
+          if (commandNodes.length > 0) {
+            commandNodes.sort((a: any, b: any) => (a.position?.y || 0) - (b.position?.y || 0));
+            const connectedCommandNode = commandNodes.find((n: any) => edges.some((e: any) => e.source === n.id));
+            startNodeId = connectedCommandNode ? connectedCommandNode.id : commandNodes[0].id;
+          }
         }
       }
 
