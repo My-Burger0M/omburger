@@ -315,7 +315,12 @@ export default function BotScenarios() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const loadedNodes = deserializeFromFirestore(data.nodes || initialNodes);
+          let loadedNodes = deserializeFromFirestore(data.nodes || (selectedPlatform === 'vk' ? [] : initialNodes));
+          
+          if (selectedPlatform === 'vk') {
+            loadedNodes = loadedNodes.filter((n: any) => n.type !== 'start');
+          }
+
           // Ensure platform is set for trigger nodes and normalize keyboard
           const updatedNodes = loadedNodes.map((n: any) => {
             let kb = n.data.keyboard || [];
@@ -332,7 +337,10 @@ export default function BotScenarios() {
             };
           });
           setNodes(updatedNodes);
-          const loadedEdges = deserializeFromFirestore(data.edges || initialEdges);
+          let loadedEdges = deserializeFromFirestore(data.edges || initialEdges);
+          if (selectedPlatform === 'vk') {
+            loadedEdges = loadedEdges.filter((e: any) => updatedNodes.some((n: any) => n.id === e.source) && updatedNodes.some((n: any) => n.id === e.target));
+          }
           const updatedEdges = loadedEdges.map((e: any) => {
             const sourceNode = updatedNodes.find((n: any) => n.id === e.source);
             if (sourceNode && sourceNode.type === 'message' && !e.sourceHandle) {
@@ -343,7 +351,7 @@ export default function BotScenarios() {
           setEdges(updatedEdges);
           setBotActive(data.isActive || false);
         } else {
-          setNodes(initialNodes);
+          setNodes(selectedPlatform === 'vk' ? [] : initialNodes);
           setEdges(initialEdges);
           setBotActive(false);
         }

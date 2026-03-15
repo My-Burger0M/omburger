@@ -102,16 +102,24 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     <aside className="w-64 bg-[#1a1a1a] border-r border-white/5 flex flex-col h-full overflow-y-auto custom-scrollbar">
       <div className="p-6 flex items-center gap-3 sticky top-0 bg-[#1a1a1a] z-20 border-b border-white/5">
         <div 
-          className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center cursor-pointer overflow-hidden relative group shrink-0 transition-transform hover:scale-105 active:scale-95"
+          className="flex-1 h-12 rounded-xl flex items-center justify-start cursor-pointer overflow-hidden relative group transition-transform hover:scale-105 active:scale-95"
           onClick={() => fileInputRef.current?.click()}
           title="Загрузить логотип"
         >
           {loading ? (
-            <div className="w-full h-full animate-pulse bg-white/20" />
+            <div className="w-full h-full animate-pulse bg-white/10 rounded-xl" />
           ) : logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
+            <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
           ) : (
-            <span className="text-xl font-bold italic text-white">OM</span>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center shrink-0">
+                <span className="text-xl font-bold italic text-white">OM</span>
+              </div>
+              <div className="overflow-hidden">
+                <h1 className="font-bold text-lg leading-tight truncate text-white">OM</h1>
+                <p className="text-xs text-gray-400 truncate">Админ панель</p>
+              </div>
+            </div>
           )}
         </div>
         <input 
@@ -123,10 +131,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           accept="image/*" 
           className="hidden" 
         />
-        <div className="overflow-hidden">
-          <h1 className="font-bold text-lg leading-tight truncate text-white">OM</h1>
-          <p className="text-xs text-gray-400 truncate">Админ панель</p>
-        </div>
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-8">

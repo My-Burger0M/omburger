@@ -112,7 +112,7 @@ async function startServer() {
       if (context.isOutbox) return;
       let text = context.text || '';
       const chatId = context.senderId.toString();
-      const messageId = (context.id || context.conversationMessageId).toString();
+      const messageId = (context.conversationMessageId || context.id).toString();
       let username = `User ${chatId}`;
       let avatar = '';
       let mediaUrl = '';
@@ -1498,7 +1498,7 @@ async function startServer() {
       const { message } = object;
       const text = message.text || '';
       const chatId = message.peer_id.toString();
-      const messageId = (message.id || message.conversation_message_id).toString();
+      const messageId = (message.conversation_message_id || message.id).toString();
       
       // Save message
       const saved = await saveMessage('vk', chatId, text, `User ${chatId}`, messageId);
@@ -1648,18 +1648,25 @@ async function startServer() {
       const fullName = [first_name, last_name].filter(Boolean).join(' ');
       const displayName = fullName || (tgUsername ? `@${tgUsername}` : `User ${chatId}`);
       const username = displayName;
+      const messageId = message.message_id?.toString();
       
       console.log(`Received TG message from ${username}: ${text}`);
-      await saveMessage('tg', chatId, text, username);
-      if (activeUserId) {
+      const saved = await saveMessage('tg', chatId, text, username, messageId);
+      if (saved && activeUserId) {
         await processScenario('tg', chatId, text, null, activeUserId);
       }
     } else if (callback_query) {
       const chatId = callback_query.message.chat.id.toString();
       const payload = callback_query.data;
+      const queryId = callback_query.id;
+      const { first_name, last_name, username: tgUsername } = callback_query.from;
+      const fullName = [first_name, last_name].filter(Boolean).join(' ');
+      const displayName = fullName || (tgUsername ? `@${tgUsername}` : `User ${chatId}`);
+      
       console.log(`Received TG callback_query from ${chatId} with payload:`, payload);
       
-      if (activeUserId) {
+      const saved = await saveMessage('tg', chatId, `(${payload})`, displayName, queryId);
+      if (saved && activeUserId) {
         await processScenario('tg', chatId, '', payload, activeUserId);
       }
       
@@ -1697,7 +1704,7 @@ async function startServer() {
       const message = object.message;
       const chatId = message.peer_id.toString();
       let text = message.text || '';
-      const messageId = (message.id || message.conversation_message_id).toString();
+      const messageId = (message.conversation_message_id || message.id).toString();
       
       let username = `User ${chatId}`;
       let mediaUrl = '';
@@ -1741,17 +1748,22 @@ async function startServer() {
       console.log(`Received VK message from ${username} (${chatId}): ${text}`);
       const saved = await saveMessage('vk', chatId, text, username, messageId, undefined, undefined, mediaUrl, mediaType);
       if (saved && activeUserId) {
-        await processScenario('vk', chatId, text, message.payload, activeUserId);
+        const payload = message.payload || (text.startsWith('/start ') ? text.split(' ')[1] : null);
+        await processScenario('vk', chatId, text, payload, activeUserId);
       }
       res.send('ok');
     } else if (type === 'message_event') {
       const event = object;
       const chatId = event.peer_id.toString();
       const payload = event.payload;
+      const text = payload?.cmd || payload?.command || JSON.stringify(payload) || 'Button clicked';
       console.log(`Received VK message_event from ${chatId} with payload:`, payload);
       
-      if (activeUserId) {
-        await processScenario('vk', chatId, '', payload, activeUserId);
+      const eventId = event.event_id;
+      const saved = await saveMessage('vk', chatId, `(${text})`, `User ${chatId}`, eventId);
+      
+      if (saved && activeUserId) {
+        await processScenario('vk', chatId, text, payload, activeUserId);
       }
       
       if (vk) {
