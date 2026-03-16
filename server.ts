@@ -6,7 +6,7 @@ import os from 'os';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth, storage } from './server-firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel, writeBatch } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
@@ -1795,6 +1795,66 @@ async function startServer() {
     }
     res.json({ success: true });
   });
+
+  // --- WB Orders Fetcher ---
+  const fetchWbOrders = async () => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      for (const userDoc of usersSnapshot.docs) {
+        const tokens = userDoc.data().tokens || {};
+        if (tokens.wb) {
+          try {
+            const dateFrom = new Date();
+            dateFrom.setDate(dateFrom.getDate() - 45); // Fetch last 45 days
+            const dateStr = dateFrom.toISOString().split('T')[0];
+            
+            const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
+              headers: { 'Authorization': tokens.wb }
+            });
+            
+            const orders = res.data;
+            if (orders && Array.isArray(orders) && orders.length > 0) {
+              const batch = writeBatch(db);
+              let count = 0;
+              
+              for (const order of orders) {
+                const orderId = order.srid;
+                const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
+                batch.set(docRef, {
+                  platform: 'wb',
+                  orderId: orderId,
+                  date: order.date,
+                  product: order.subject,
+                  article: order.supplierArticle,
+                  price: order.finishedPrice,
+                  status: order.isCancel ? 'cancelled' : 'ordered',
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+                
+                count++;
+                if (count === 400) {
+                  await batch.commit();
+                  count = 0;
+                }
+              }
+              if (count > 0) {
+                await batch.commit();
+              }
+              console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id}`);
+            }
+          } catch (err: any) {
+            console.error(`Error fetching WB orders for user ${userDoc.id}:`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error in fetchWbOrders loop:', err);
+    }
+  };
+
+  // Run WB fetcher shortly after startup and then every hour
+  setTimeout(fetchWbOrders, 10000);
+  setInterval(fetchWbOrders, 60 * 60 * 1000);
 
   // --- Scheduler Loop ---
   setInterval(async () => {

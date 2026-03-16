@@ -9,8 +9,12 @@ import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import UserListModal from '../components/UserListModal';
 import SendStatsModal from '../components/SendStatsModal';
+import MarketplaceOrdersModal from '../components/MarketplaceOrdersModal';
+
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
+  const { currentUser } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [statsData, setStatsData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +29,23 @@ export default function Dashboard() {
   const [selectedPlatform, setSelectedPlatform] = useState<'tg' | 'vk' | 'max' | 'all' | null>(null);
   const [isUserListModalOpen, setIsUserListModalOpen] = useState(false);
   const [isSendStatsModalOpen, setIsSendStatsModalOpen] = useState(false);
+  
+  const [marketplaceOrders, setMarketplaceOrders] = useState<any[]>([]);
+  const [isMarketplaceModalOpen, setIsMarketplaceModalOpen] = useState(false);
+  const [marketplaceModalTitle, setMarketplaceModalTitle] = useState('');
+  const [marketplaceModalOrders, setMarketplaceModalOrders] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const q = query(collection(db, 'users', currentUser.uid, 'marketplace_orders'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMarketplaceOrders(orders);
+    });
+    
+    return () => unsubscribe();
+  }, [currentUser]);
 
   useEffect(() => {
     // Stats listener
@@ -129,6 +150,21 @@ export default function Dashboard() {
   const totalAll = totalUsers;
 
   const getPercent = (val: number) => totalAll > 0 ? Math.round((val / totalAll) * 100) : 0;
+
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const monthStartStr = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+
+  const ordersToday = marketplaceOrders.filter(o => o.date.startsWith(todayStr));
+  const orders30Days = marketplaceOrders.filter(o => new Date(o.date) >= thirtyDaysAgo);
+  const ordersThisMonth = marketplaceOrders.filter(o => o.date >= monthStartStr);
+
+  const openMarketplaceModal = (title: string, orders: any[]) => {
+    setMarketplaceModalTitle(title);
+    setMarketplaceModalOrders(orders);
+    setIsMarketplaceModalOpen(true);
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -293,12 +329,12 @@ export default function Dashboard() {
 
       {/* Bottom Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <BottomCard imageKey="bot1" title="Заказы за сегодня" value="0" unit="ед" icon={<Clock className="w-6 h-6" />} />
-        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value="0" unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
-        <BottomCard imageKey="bot3" title="Сегодня Ozon" value="0" unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
-        <BottomCard imageKey="bot4" title="Заказы за 30 дней" value="0" unit="ед" icon={<Clock className="w-6 h-6" />} />
-        <BottomCard imageKey="bot5" title="За месяц Wildberries" value="0" unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
-        <BottomCard imageKey="bot6" title="За месяц Ozon" value="0" unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
+        <BottomCard imageKey="bot1" title="Заказы за сегодня" value={ordersToday.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
+        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={ordersToday.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot3" title="Сегодня Ozon" value={ordersToday.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Ozon', ordersToday.filter(o => o.platform === 'ozon'))} />
+        <BottomCard imageKey="bot4" title="Заказы за 30 дней" value={orders30Days.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за 30 дней', orders30Days)} />
+        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={ordersThisMonth.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot6" title="За месяц Ozon" value={ordersThisMonth.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Ozon', ordersThisMonth.filter(o => o.platform === 'ozon'))} />
       </div>
 
       {selectedPlatform && (
@@ -314,6 +350,13 @@ export default function Dashboard() {
         onClose={() => setIsSendModalOpen(false)}
         statsData={statsData}
         currentDate={currentDate}
+      />
+
+      <MarketplaceOrdersModal
+        isOpen={isMarketplaceModalOpen}
+        onClose={() => setIsMarketplaceModalOpen(false)}
+        title={marketplaceModalTitle}
+        orders={marketplaceModalOrders}
       />
     </div>
   );
@@ -462,7 +505,7 @@ function TopCard({ title, value, percentage, icon, borderColor, iconBg, progress
   );
 }
 
-function BottomCard({ title, value, unit, icon, imageKey }: { title: string, value: string, unit: string, icon: React.ReactNode, imageKey: string }) {
+function BottomCard({ title, value, unit, icon, imageKey, onClick }: { title: string, value: string, unit: string, icon: React.ReactNode, imageKey: string, onClick?: () => void }) {
   const { url: iconUrl, uploadImage, loading } = useFirebaseImage(imageKey);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -479,7 +522,10 @@ function BottomCard({ title, value, unit, icon, imageKey }: { title: string, val
   };
 
   return (
-    <div className="bg-[#1a1a1a] rounded-2xl border border-purple-500/30 p-5 flex flex-col justify-between relative overflow-hidden transition-transform hover:scale-[1.02]">
+    <div 
+      onClick={onClick}
+      className={`bg-[#1a1a1a] rounded-2xl border border-purple-500/30 p-5 flex flex-col justify-between relative overflow-hidden transition-transform hover:scale-[1.02] ${onClick ? 'cursor-pointer' : ''}`}
+    >
       <h3 className="text-sm text-gray-400 mb-4 pr-8 leading-tight">{title}</h3>
       <div className="flex items-baseline gap-1">
         <span className="text-2xl font-bold">{value}</span>
