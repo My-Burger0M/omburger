@@ -9,6 +9,7 @@ import { resizeImage } from '../utils/image';
 interface Product {
   id: string;
   name: string;
+  article?: string;
   costPrice: number;
   costSettingId?: string;
   imageUrl: string;
@@ -34,6 +35,7 @@ export default function Products() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Stats
@@ -42,6 +44,7 @@ export default function Products() {
   // Form State
   const [newProduct, setNewProduct] = useState({
     name: '',
+    article: '',
     costSettingId: '',
     costPrice: '',
     imageUrl: '',
@@ -84,21 +87,57 @@ export default function Products() {
       })) as Product[];
       setProducts(productsData);
       
-      // Calculate stats
+      // Fetch actual orders for stats
+      const ordersQ = query(collection(db, 'users', currentUser.uid, 'marketplace_orders'));
+      const ordersSnapshot = await getDocs(ordersQ);
+      
       let total = 0, wb = 0, ozon = 0;
-      productsData.forEach(p => {
-        if (p.salesPercent) {
-          total += p.salesPercent;
-          if (p.apiWb) wb += p.salesPercent;
-          if (p.apiOzon) ozon += p.salesPercent;
-        }
+      
+      ordersSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        total++;
+        if (data.platform === 'wb') wb++;
+        if (data.platform === 'ozon') ozon++;
       });
+      
       setStats({ total, wb, ozon });
     } catch (error) {
       console.error("Error fetching products:", error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const openEditModal = (product: Product) => {
+    setProductToEdit(product);
+    setNewProduct({
+      name: product.name,
+      article: product.article || '',
+      costSettingId: product.costSettingId || '',
+      costPrice: product.costPrice.toString(),
+      imageUrl: product.imageUrl,
+      marketplace: product.marketplace,
+      apiWb: product.apiWb || '',
+      apiOzon: product.apiOzon || ''
+    });
+    setPreviewUrl(product.imageUrl);
+    setIsModalOpen(true);
+  };
+
+  const openAddModal = () => {
+    setProductToEdit(null);
+    setNewProduct({
+      name: '',
+      article: '',
+      costSettingId: '',
+      costPrice: '',
+      imageUrl: '',
+      marketplace: 'wb',
+      apiWb: '',
+      apiOzon: ''
+    });
+    setPreviewUrl('');
+    setIsModalOpen(true);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,7 +154,7 @@ export default function Products() {
     }
   };
 
-  const handleAddProduct = async () => {
+  const handleSaveProduct = async () => {
     if (!currentUser) return;
     if (!newProduct.name || !newProduct.costSettingId) {
       alert('Пожалуйста, заполните обязательные поля (Название, Список стоимости)');
@@ -137,26 +176,34 @@ export default function Products() {
       }
       const costPrice = setting.totalCost;
 
-      await addDoc(collection(db, 'users', currentUser.uid, 'products'), {
+      const productData = {
         name: newProduct.name,
+        article: newProduct.article,
         costPrice: costPrice,
         costSettingId: newProduct.costSettingId,
         imageUrl: finalImageUrl,
         marketplace: newProduct.marketplace,
         apiWb: newProduct.apiWb,
         apiOzon: newProduct.apiOzon,
-        salesPercent: 0, // Default for now
-        createdAt: new Date()
-      });
+        salesPercent: productToEdit ? productToEdit.salesPercent : 0,
+        createdAt: productToEdit ? productToEdit.createdAt : new Date()
+      };
+
+      if (productToEdit) {
+        await updateDoc(doc(db, 'users', currentUser.uid, 'products', productToEdit.id), productData);
+      } else {
+        await addDoc(collection(db, 'users', currentUser.uid, 'products'), productData);
+      }
       
       setIsModalOpen(false);
-      setNewProduct({ name: '', costSettingId: '', costPrice: '', imageUrl: '', marketplace: 'wb', apiWb: '', apiOzon: '' });
+      setNewProduct({ name: '', article: '', costSettingId: '', costPrice: '', imageUrl: '', marketplace: 'wb', apiWb: '', apiOzon: '' });
       setSelectedFile(null);
       setPreviewUrl('');
+      setProductToEdit(null);
       fetchProducts();
     } catch (error) {
-      console.error("Error adding product:", error);
-      alert('Ошибка при добавлении товара');
+      console.error("Error saving product:", error);
+      alert('Ошибка при сохранении товара');
     }
   };
 
@@ -216,7 +263,12 @@ export default function Products() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold">Товары</h1>
+        <h1 className="text-3xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
+          Товары
+          <span className="text-sm font-normal text-gray-400 bg-[#1a1a1a] px-3 py-1 rounded-full border border-white/5">
+            Обновление данных: 00:00 МСК
+          </span>
+        </h1>
       </div>
 
       {/* Stats Row */}
@@ -261,9 +313,6 @@ export default function Products() {
             <div className="text-lg font-medium text-white">Себестоимости</div>
           </div>
           <div className="flex gap-2">
-            <button className="bg-[#2a2a2a] w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-[#333] transition-colors relative">
-              <Info size={20} />
-            </button>
             <button 
               onClick={() => navigate('/cost-settings')}
               className="bg-green-700 w-10 h-10 rounded-xl flex items-center justify-center text-white hover:bg-green-600 transition-colors relative"
@@ -292,24 +341,29 @@ export default function Products() {
                 <h3 className="text-xl font-bold text-white mb-1 line-clamp-2">{product.name}</h3>
               </div>
 
-              {/* Top Left Badge */}
-              <div className="absolute top-4 left-4">
-                 <div className="w-8 h-8 bg-[#2a2a2a]/80 backdrop-blur-sm rounded-full flex items-center justify-center text-white font-bold border border-white/10">
-                   {product.marketplace === 'wb' ? 'W' : 'O'}
-                 </div>
-              </div>
-
               {/* Delete Button (Top Right) */}
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setProductToDelete(product.id);
-                }}
-                className="absolute top-4 right-4 w-8 h-8 bg-red-500/80 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
-                title="Удалить товар"
-              >
-                <Trash2 size={16} />
-              </button>
+              <div className="absolute top-4 right-4 flex flex-row gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setProductToDelete(product.id);
+                  }}
+                  className="w-8 h-8 bg-red-500/80 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors"
+                  title="Удалить товар"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditModal(product);
+                  }}
+                  className="w-8 h-8 bg-blue-500/80 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-blue-600 transition-colors"
+                  title="Редактировать товар"
+                >
+                  <RefreshCw size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Info Section */}
@@ -341,7 +395,7 @@ export default function Products() {
 
         {/* Add Button Card */}
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={openAddModal}
           className="bg-[#1a1a1a] rounded-3xl border border-white/5 flex flex-col items-center justify-center aspect-[3/4] hover:bg-[#222] transition-all group cursor-pointer w-full"
         >
           <div className="w-20 h-20 rounded-2xl border-2 border-white/20 flex items-center justify-center mb-4 group-hover:border-white/40 transition-colors">
@@ -362,7 +416,7 @@ export default function Products() {
               <X size={24} />
             </button>
             
-            <h2 className="text-2xl font-bold">Добавить товар</h2>
+            <h2 className="text-2xl font-bold">{productToEdit ? 'Редактировать товар' : 'Добавить товар'}</h2>
             
             <div className="space-y-4">
               <div>
@@ -393,6 +447,17 @@ export default function Products() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Артикул</label>
+                <input 
+                  type="text" 
+                  value={newProduct.article}
+                  onChange={(e) => setNewProduct({...newProduct, article: e.target.value})}
+                  className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="Артикул товара"
+                />
               </div>
 
               <div>
@@ -448,7 +513,7 @@ export default function Products() {
             </div>
 
             <button 
-              onClick={handleAddProduct}
+              onClick={handleSaveProduct}
               className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-colors"
             >
               Сохранить

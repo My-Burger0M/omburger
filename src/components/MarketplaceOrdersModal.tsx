@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Package, Search, Filter } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Package, Search, Filter, ArrowUpDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
@@ -19,25 +19,60 @@ interface MarketplaceOrdersModalProps {
   onClose: () => void;
   title: string;
   orders: Order[];
+  products: any[];
 }
 
-export default function MarketplaceOrdersModal({ isOpen, onClose, title, orders }: MarketplaceOrdersModalProps) {
+export default function MarketplaceOrdersModal({ isOpen, onClose, title, orders, products }: MarketplaceOrdersModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [platformFilter, setPlatformFilter] = useState<'all' | 'wb' | 'ozon'>('all');
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'name_asc' | 'name_desc'>('date_desc');
+
+  const getProductName = (order: Order) => {
+    // Try linking by article
+    const productByArticle = products.find(p => p.article && String(p.article).trim().toLowerCase() === String(order.article).trim().toLowerCase());
+    if (productByArticle) return productByArticle.name;
+    
+    // Try linking by name
+    const productByName = products.find(p => p.name && String(p.name).trim().toLowerCase() === String(order.product).trim().toLowerCase());
+    if (productByName) return productByName.name;
+
+    // Fallback: Show subject (category) and article so user knows which one it is
+    if (order.product && order.article) {
+      return `${order.product} (Арт: ${order.article})`;
+    }
+    return order.product || order.article || 'Неизвестный товар';
+  };
+
+  const filteredAndSortedOrders = useMemo(() => {
+    let result = orders.filter(order => {
+      const productName = getProductName(order);
+      const article = order.article || '';
+      const orderId = order.orderId || '';
+      
+      const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            article.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            orderId.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesPlatform = platformFilter === 'all' || order.platform === platformFilter;
+      return matchesSearch && matchesPlatform;
+    });
+
+    result.sort((a, b) => {
+      if (sortBy === 'date_desc') {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      } else if (sortBy === 'date_asc') {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      } else if (sortBy === 'name_asc') {
+        return getProductName(a).localeCompare(getProductName(b));
+      } else if (sortBy === 'name_desc') {
+        return getProductName(b).localeCompare(getProductName(a));
+      }
+      return 0;
+    });
+
+    return result;
+  }, [orders, searchTerm, platformFilter, sortBy, products]);
 
   if (!isOpen) return null;
-
-  const filteredOrders = orders.filter(order => {
-    const product = order.product || '';
-    const article = order.article || '';
-    const orderId = order.orderId || '';
-    
-    const matchesSearch = product.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          article.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          orderId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPlatform = platformFilter === 'all' || order.platform === platformFilter;
-    return matchesSearch && matchesPlatform;
-  });
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -49,7 +84,7 @@ export default function MarketplaceOrdersModal({ isOpen, onClose, title, orders 
             </div>
             <div>
               <h2 className="text-xl font-bold">{title}</h2>
-              <p className="text-sm text-gray-400">Всего заказов: {filteredOrders.length}</p>
+              <p className="text-sm text-gray-400">Всего заказов: {filteredAndSortedOrders.length}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
@@ -80,24 +115,37 @@ export default function MarketplaceOrdersModal({ isOpen, onClose, title, orders 
               <option value="ozon">Ozon</option>
             </select>
           </div>
+          <div className="flex items-center gap-2">
+            <ArrowUpDown className="w-4 h-4 text-gray-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            >
+              <option value="date_desc">Сначала новые</option>
+              <option value="date_asc">Сначала старые</option>
+              <option value="name_asc">По названию (А-Я)</option>
+              <option value="name_desc">По названию (Я-А)</option>
+            </select>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {filteredOrders.length === 0 ? (
+          {filteredAndSortedOrders.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <Package className="w-12 h-12 mx-auto mb-4 opacity-20" />
               <p>Заказы не найдены</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredOrders.map(order => (
+              {filteredAndSortedOrders.map(order => (
                 <div key={order.id} className="bg-[#2a2a2a] rounded-xl p-4 flex items-center justify-between border border-white/5 hover:border-white/10 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-lg bg-[#1e1e1e] flex items-center justify-center shrink-0">
                       <span className="text-xs font-bold text-gray-400 uppercase">{order.platform}</span>
                     </div>
                     <div>
-                      <h4 className="font-medium text-white">{order.product || 'Неизвестный товар'}</h4>
+                      <h4 className="font-medium text-white">{getProductName(order)}</h4>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
                         <span>Арт: {order.article}</span>
                         <span>•</span>

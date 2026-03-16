@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [isSendStatsModalOpen, setIsSendStatsModalOpen] = useState(false);
   
   const [marketplaceOrders, setMarketplaceOrders] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [isMarketplaceModalOpen, setIsMarketplaceModalOpen] = useState(false);
   const [marketplaceModalTitle, setMarketplaceModalTitle] = useState('');
   const [marketplaceModalOrders, setMarketplaceModalOrders] = useState<any[]>([]);
@@ -44,7 +45,16 @@ export default function Dashboard() {
       setMarketplaceOrders(orders);
     });
     
-    return () => unsubscribe();
+    const qProducts = query(collection(db, 'users', currentUser.uid, 'products'));
+    const unsubscribeProducts = onSnapshot(qProducts, (snapshot) => {
+      const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProducts(products);
+    });
+    
+    return () => {
+      unsubscribe();
+      unsubscribeProducts();
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -151,14 +161,38 @@ export default function Dashboard() {
 
   const getPercent = (val: number) => totalAll > 0 ? Math.round((val / totalAll) * 100) : 0;
 
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const thirtyDaysAgo = new Date();
+  // MSK Time calculations
+  const now = new Date();
+  const mskTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+  const todayStr = format(mskTime, 'yyyy-MM-dd');
+  
+  const thirtyDaysAgo = new Date(mskTime);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const monthStartStr = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+  
+  const monthStartStr = format(startOfMonth(mskTime), 'yyyy-MM-dd');
 
-  const ordersToday = marketplaceOrders.filter(o => o.date.startsWith(todayStr));
-  const orders30Days = marketplaceOrders.filter(o => new Date(o.date) >= thirtyDaysAgo);
-  const ordersThisMonth = marketplaceOrders.filter(o => o.date >= monthStartStr);
+  const getMskDateString = (dateString: string) => {
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return '';
+      const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+      return format(msk, 'yyyy-MM-dd');
+    } catch {
+      return '';
+    }
+  };
+
+  const ordersToday = marketplaceOrders.filter(o => getMskDateString(o.date) === todayStr);
+  const orders30Days = marketplaceOrders.filter(o => {
+    try {
+      const d = new Date(o.date);
+      const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+      return msk >= thirtyDaysAgo;
+    } catch {
+      return false;
+    }
+  });
+  const ordersThisMonth = marketplaceOrders.filter(o => getMskDateString(o.date) >= monthStartStr);
 
   const openMarketplaceModal = (title: string, orders: any[]) => {
     setMarketplaceModalTitle(title);
@@ -330,11 +364,11 @@ export default function Dashboard() {
       {/* Bottom Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <BottomCard imageKey="bot1" title="Заказы за сегодня" value={ordersToday.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
-        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={ordersToday.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot4" title="Заказы за 30 дней" value={orders30Days.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} />
         <BottomCard imageKey="bot3" title="Сегодня Ozon" value={ordersToday.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Ozon', ordersToday.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot4" title="Заказы за 30 дней" value={orders30Days.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за 30 дней', orders30Days)} />
-        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={ordersThisMonth.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={ordersToday.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
         <BottomCard imageKey="bot6" title="За месяц Ozon" value={ordersThisMonth.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Ozon', ordersThisMonth.filter(o => o.platform === 'ozon'))} />
+        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={ordersThisMonth.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
       </div>
 
       {selectedPlatform && (
@@ -357,6 +391,7 @@ export default function Dashboard() {
         onClose={() => setIsMarketplaceModalOpen(false)}
         title={marketplaceModalTitle}
         orders={marketplaceModalOrders}
+        products={products}
       />
     </div>
   );

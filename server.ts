@@ -11,6 +11,7 @@ import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
 import axios from 'axios';
+import cron from 'node-cron';
 
 // Suppress Firestore gRPC stream errors in Node.js
 const originalConsoleError = console.error;
@@ -203,9 +204,6 @@ async function startServer() {
       console.log(`Received VK message_event from ${username}: ${text}`);
       const eventId = context.eventId || `evt_${Date.now()}_${Math.random()}`;
       const saved = await saveMessage('vk', chatId, `(${buttonText})`, username, eventId);
-      if (saved && userId) {
-        await processScenario('vk', chatId, text, null, userId);
-      }
       
       try {
         await vk!.api.messages.sendMessageEventAnswer({
@@ -216,6 +214,10 @@ async function startServer() {
         });
       } catch (e) {
         console.error('Error answering VK message_event:', e);
+      }
+
+      if (saved && userId) {
+        processScenario('vk', chatId, text, payload?.cmd || null, userId).catch(e => console.error('Error in processScenario:', e));
       }
     });
   };
@@ -969,9 +971,10 @@ async function startServer() {
               const row = node.data.keyboard[i].buttons || node.data.keyboard[i];
               for (let j = 0; j < row.length; j++) {
                 const btn = row[j];
-                if (btn.callback_data === matchValue || btn.text === matchValue || btn.id === matchValue) {
+                const btnId = btn.id || `btn_${i}_${j}`;
+                if (btn.callback_data === matchValue || btn.text === matchValue || btnId === matchValue) {
                   isButtonClick = true;
-                  const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btn.id || e.sourceHandle === `btn_${i}_${j}`));
+                  const edge = edges.find((e: any) => e.source === node.id && (e.sourceHandle === btnId || e.sourceHandle === `btn_${i}_${j}`));
                   if (edge) {
                     matchedButtonEdge = edge;
                   }
@@ -1248,8 +1251,8 @@ async function startServer() {
         }
 
         if (keyboard && keyboard.inline_keyboard) {
-          const vkButtons = keyboard.inline_keyboard.map((row: any[]) => 
-            row.map(btn => {
+          const vkButtons = keyboard.inline_keyboard.map((row: any[], i: number) => 
+            row.map((btn, j: number) => {
               if (btn.url) {
                 const link = btn.url.startsWith('http') ? btn.url : `https://${btn.url}`;
                 return { action: { type: 'open_link', link, label: btn.text } };
@@ -1258,8 +1261,9 @@ async function startServer() {
               if (!btnColor || btnColor === 'default') {
                 btnColor = 'secondary';
               }
+              const cmd = btn.callback_data || btn.id || `btn_${i}_${j}`;
               return { 
-                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd: btn.callback_data || btn.id }) },
+                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd }) },
                 color: btnColor
               };
             })
@@ -1475,6 +1479,9 @@ async function startServer() {
 
   // VK Callback API handler
   app.all('/api/vk/callback', async (req, res) => {
+    if (vkPollingStarted && req.method === 'POST') {
+      return res.send('ok');
+    }
     console.log(`VK Callback received: ${req.method} request`);
     
     if (req.method === 'GET') {
@@ -1683,6 +1690,9 @@ async function startServer() {
 
   // VK Webhook
   app.post('/api/webhook/vk', async (req, res) => {
+    if (vkPollingStarted) {
+      return res.send('ok');
+    }
     const { type, object, group_id, secret } = req.body;
     
     console.log('VK Webhook received:', type, group_id);
@@ -1762,20 +1772,40 @@ async function startServer() {
       const eventId = event.event_id;
       const saved = await saveMessage('vk', chatId, `(${text})`, `User ${chatId}`, eventId);
       
-      if (saved && activeUserId) {
-        await processScenario('vk', chatId, text, payload, activeUserId);
-      }
-      
       if (vk) {
         try {
           await vk.api.messages.sendMessageEventAnswer({
             event_id: event.event_id,
             user_id: event.user_id,
-            peer_id: event.peer_id
+            peer_id: event.peer_id,
+            event_data: JSON.stringify({ type: 'show_snackbar', text: '✅' })
           });
         } catch (e) {
           console.error('Error sending VK event answer in webhook:', e);
         }
+      } else if (activeUserId) {
+        try {
+          const userDocSnap = await getDoc(doc(db, 'users', activeUserId));
+          const tokens = userDocSnap.data()?.tokens || {};
+          if (tokens.vk) {
+            await axios.post('https://api.vk.com/method/messages.sendMessageEventAnswer', null, {
+              params: {
+                event_id: event.event_id,
+                user_id: event.user_id,
+                peer_id: event.peer_id,
+                access_token: tokens.vk,
+                v: '5.131',
+                event_data: JSON.stringify({ type: 'show_snackbar', text: '✅' })
+              }
+            });
+          }
+        } catch (e) {
+          console.error('Error sending VK event answer via axios:', e);
+        }
+      }
+
+      if (saved && activeUserId) {
+        processScenario('vk', chatId, text, payload?.cmd || null, activeUserId).catch(e => console.error(e));
       }
       res.send('ok');
     } else {
@@ -1797,7 +1827,7 @@ async function startServer() {
   });
 
   // --- WB Orders Fetcher ---
-  const fetchWbOrders = async () => {
+  const fetchWbOrders = async (daysBack: number = 45) => {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
       for (const userDoc of usersSnapshot.docs) {
@@ -1805,7 +1835,7 @@ async function startServer() {
         if (tokens.wb) {
           try {
             const dateFrom = new Date();
-            dateFrom.setDate(dateFrom.getDate() - 45); // Fetch last 45 days
+            dateFrom.setDate(dateFrom.getDate() - daysBack);
             const dateStr = dateFrom.toISOString().split('T')[0];
             
             const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
@@ -1852,9 +1882,20 @@ async function startServer() {
     }
   };
 
-  // Run WB fetcher shortly after startup and then every hour
-  setTimeout(fetchWbOrders, 10000);
-  setInterval(fetchWbOrders, 60 * 60 * 1000);
+  // Run WB fetcher shortly after startup
+  setTimeout(() => fetchWbOrders(45), 10000);
+  
+  // Every hour on the hour MSK (which is just every hour on the hour in any timezone)
+  cron.schedule('0 * * * *', () => {
+    console.log('Running hourly WB fetch (45 days)');
+    fetchWbOrders(45);
+  });
+
+  // Every day at 00:00 MSK (21:00 UTC) fetch all-time (e.g. 1000 days back)
+  cron.schedule('0 21 * * *', () => {
+    console.log('Running daily all-time WB fetch (1000 days)');
+    fetchWbOrders(1000);
+  });
 
   // --- Scheduler Loop ---
   setInterval(async () => {
