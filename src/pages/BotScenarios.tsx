@@ -290,6 +290,9 @@ export default function BotScenarios() {
   const [selectedPlatform, setSelectedPlatform] = useState<'tg' | 'vk' | 'max'>('tg');
 
   const deserializeFromFirestore = (obj: any): any => {
+    if (obj && typeof obj.toDate === 'function') {
+      return obj;
+    }
     if (Array.isArray(obj)) {
       return obj.map(item => deserializeFromFirestore(item));
     } else if (obj !== null && typeof obj === 'object') {

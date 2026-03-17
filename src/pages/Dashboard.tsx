@@ -1,4 +1,4 @@
-import { Send, MessageCircle, Users, Activity, Clock, ShoppingBag, ChevronLeft, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
+import { Send, MessageCircle, Users, Activity, Clock, ShoppingBag, ChevronLeft, ChevronRight, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import React, { useRef, useState, useEffect } from 'react';
 import { useFirebaseImage } from '../hooks/useFirebaseImage';
@@ -9,7 +9,6 @@ import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import UserListModal from '../components/UserListModal';
 import SendStatsModal from '../components/SendStatsModal';
-import MarketplaceOrdersModal from '../components/MarketplaceOrdersModal';
 
 import { useAuth } from '../contexts/AuthContext';
 
@@ -30,30 +29,59 @@ export default function Dashboard() {
   const [isUserListModalOpen, setIsUserListModalOpen] = useState(false);
   const [isSendStatsModalOpen, setIsSendStatsModalOpen] = useState(false);
   
-  const [marketplaceOrders, setMarketplaceOrders] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [isMarketplaceModalOpen, setIsMarketplaceModalOpen] = useState(false);
-  const [marketplaceModalTitle, setMarketplaceModalTitle] = useState('');
-  const [marketplaceModalOrders, setMarketplaceModalOrders] = useState<any[]>([]);
+  const [todayStats, setTodayStats] = useState({ total: 0, wb: 0, ozon: 0 });
+  const [monthStats, setMonthStats] = useState({ total: 0, wb: 0, ozon: 0 });
+  const [isSyncingWb, setIsSyncingWb] = useState(false);
+
+  const handleForceLoadWb = async () => {
+    if (!currentUser) return;
+    setIsSyncingWb(true);
+    
+    try {
+      const response = await fetch('/api/wb/fetch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ userId: currentUser.uid })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка загрузки');
+      }
+      
+      alert(`Успешно загружено ${data.count} заказов`);
+    } catch (error: any) {
+      console.error("Error syncing with API:", error);
+      alert("Ошибка при синхронизации с API: " + error.message);
+    } finally {
+      setIsSyncingWb(false);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return;
     
-    const q = query(collection(db, 'users', currentUser.uid, 'marketplace_orders'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMarketplaceOrders(orders);
-    });
-    
-    const qProducts = query(collection(db, 'users', currentUser.uid, 'products'));
-    const unsubscribeProducts = onSnapshot(qProducts, (snapshot) => {
-      const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(products);
+    const docRef = doc(db, 'users', currentUser.uid, 'stats', 'dashboard');
+    const unsubscribeStats = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setTodayStats({
+          total: data.today?.all || 0,
+          wb: data.today?.wb || 0,
+          ozon: data.today?.ozon || 0
+        });
+        setMonthStats({
+          total: data.month?.all || 0,
+          wb: data.month?.wb || 0,
+          ozon: data.month?.ozon || 0
+        });
+      }
     });
     
     return () => {
-      unsubscribe();
-      unsubscribeProducts();
+      unsubscribeStats();
     };
   }, [currentUser]);
 
@@ -171,38 +199,23 @@ export default function Dashboard() {
   
   const monthStartStr = format(startOfMonth(mskTime), 'yyyy-MM-dd');
 
-  const getMskDateString = (dateString: string) => {
-    try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return '';
-      const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
-      return format(msk, 'yyyy-MM-dd');
-    } catch {
-      return '';
-    }
-  };
 
-  const ordersToday = marketplaceOrders.filter(o => getMskDateString(o.date) === todayStr);
-  const orders30Days = marketplaceOrders.filter(o => {
-    try {
-      const d = new Date(o.date);
-      const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
-      return msk >= thirtyDaysAgo;
-    } catch {
-      return false;
-    }
-  });
-  const ordersThisMonth = marketplaceOrders.filter(o => getMskDateString(o.date) >= monthStartStr);
-
-  const openMarketplaceModal = (title: string, orders: any[]) => {
-    setMarketplaceModalTitle(title);
-    setMarketplaceModalOrders(orders);
-    setIsMarketplaceModalOpen(true);
-  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold mb-8">Дашборд</h1>
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold">Дашборд</h1>
+          <button 
+            onClick={handleForceLoadWb}
+            disabled={isSyncingWb}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={isSyncingWb ? 'animate-spin' : ''} />
+            {isSyncingWb ? 'Загрузка...' : 'Принудительная загрузка ВБ'}
+          </button>
+        </div>
+      </div>
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl flex items-start gap-3">
@@ -363,12 +376,12 @@ export default function Dashboard() {
 
       {/* Bottom Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <BottomCard imageKey="bot1" title="Заказы за сегодня" value={ordersToday.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
-        <BottomCard imageKey="bot4" title="Заказы за 30 дней" value={orders30Days.length.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} />
-        <BottomCard imageKey="bot3" title="Сегодня Ozon" value={ordersToday.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Ozon', ordersToday.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={ordersToday.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
-        <BottomCard imageKey="bot6" title="За месяц Ozon" value={ordersThisMonth.filter(o => o.platform === 'ozon').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Ozon', ordersThisMonth.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={ordersThisMonth.filter(o => o.platform === 'wb').length.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot1" title="Заказы за сегодня" value={todayStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} />
+        <BottomCard imageKey="bot4" title="Заказы за месяц" value={monthStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} />
+        <BottomCard imageKey="bot3" title="Сегодня Ozon" value={todayStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
+        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={todayStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
+        <BottomCard imageKey="bot6" title="За месяц Ozon" value={monthStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
+        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={monthStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
       </div>
 
       {selectedPlatform && (
@@ -384,14 +397,6 @@ export default function Dashboard() {
         onClose={() => setIsSendModalOpen(false)}
         statsData={statsData}
         currentDate={currentDate}
-      />
-
-      <MarketplaceOrdersModal
-        isOpen={isMarketplaceModalOpen}
-        onClose={() => setIsMarketplaceModalOpen(false)}
-        title={marketplaceModalTitle}
-        orders={marketplaceModalOrders}
-        products={products}
       />
     </div>
   );

@@ -1826,54 +1826,277 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // --- Aggregation Logic ---
+  const aggregateUserStats = async (userId: string) => {
+    try {
+      const ordersSnapshot = await getDocs(collection(db, 'users', userId, 'marketplace_orders'));
+      
+      const stats = {
+        total: { all: 0, wb: 0, ozon: 0 },
+        today: { all: 0, wb: 0, ozon: 0 },
+        month: { all: 0, wb: 0, ozon: 0 },
+      };
+      
+      const articleCounts: Record<string, number> = {};
+      
+      const now = new Date();
+      // Use UTC+3 (MSK) for date string matching
+      const getMskDateStr = (d: Date) => {
+        const mskDate = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+        return mskDate.toISOString().split('T')[0];
+      };
+      
+      const todayStr = getMskDateStr(now);
+      const monthStr = todayStr.substring(0, 7);
+      
+      const last7DaysMap: Record<string, { wb: number, ozon: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        last7DaysMap[getMskDateStr(d)] = { wb: 0, ozon: 0 };
+      }
+
+      ordersSnapshot.forEach(doc => {
+        const data = doc.data();
+        const platform = data.platform as 'wb' | 'ozon' || 'wb';
+        
+        // We count all orders (or we could filter by status !== 'cancelled')
+        // The user asked for "how many were sold", usually we count all ordered.
+        stats.total.all++;
+        stats.total[platform]++;
+        
+        if (data.date) {
+          const orderDate = new Date(data.date);
+          const dateOnly = getMskDateStr(orderDate);
+          
+          if (dateOnly === todayStr) {
+            stats.today.all++;
+            stats.today[platform]++;
+          }
+          if (dateOnly.startsWith(monthStr)) {
+            stats.month.all++;
+            stats.month[platform]++;
+          }
+          
+          if (last7DaysMap[dateOnly]) {
+            last7DaysMap[dateOnly][platform]++;
+          }
+        }
+
+        if (data.article) {
+          articleCounts[data.article] = (articleCounts[data.article] || 0) + 1;
+        }
+      });
+
+      const chartData = Object.keys(last7DaysMap).sort().map(date => ({
+        name: date.split('-').slice(1).join('.'),
+        wb: last7DaysMap[date].wb,
+        ozon: last7DaysMap[date].ozon
+      }));
+
+      await setDoc(doc(db, 'users', userId, 'stats', 'dashboard'), {
+        ...stats,
+        chartData,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Update products in batches
+      const productsSnapshot = await getDocs(collection(db, 'users', userId, 'products'));
+      const batches = [];
+      let currentBatch = writeBatch(db);
+      let count = 0;
+      
+      productsSnapshot.forEach(pDoc => {
+        const pData = pDoc.data();
+        if (pData.article) {
+          const salesCount = articleCounts[pData.article] || 0;
+          currentBatch.update(pDoc.ref, { salesPercent: salesCount });
+          count++;
+          if (count === 400) {
+            batches.push(currentBatch.commit());
+            currentBatch = writeBatch(db);
+            count = 0;
+          }
+        }
+      });
+      if (count > 0) {
+        batches.push(currentBatch.commit());
+      }
+      await Promise.all(batches);
+      console.log(`Aggregated stats for user ${userId}`);
+    } catch (err) {
+      console.error(`Error aggregating stats for user ${userId}:`, err);
+    }
+  };
+
+  app.post('/api/wb/fetch', async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const tokens = userDoc.data()?.tokens || {};
+      
+      // Get tokens from products as well
+      const productsSnapshot = await getDocs(collection(db, 'users', userId, 'products'));
+      const productTokens = new Set<string>();
+      productsSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.apiWb) productTokens.add(data.apiWb);
+      });
+      
+      const allWbTokens = new Set<string>();
+      if (tokens.wb) allWbTokens.add(tokens.wb);
+      productTokens.forEach(t => allWbTokens.add(t));
+      
+      if (allWbTokens.size === 0) {
+        return res.status(400).json({ error: 'No WB tokens found' });
+      }
+      
+      let totalOrders = 0;
+      let hasError = false;
+      let errorMsg = '';
+      
+      // Fetch for all time (e.g. 3000 days back)
+      const dateFrom = new Date();
+      dateFrom.setDate(dateFrom.getDate() - 3000);
+      const dateStr = dateFrom.toISOString().split('T')[0];
+      
+      for (const token of allWbTokens) {
+        try {
+          const response = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
+            headers: { 'Authorization': token }
+          });
+          
+          const orders = response.data;
+          if (orders && Array.isArray(orders) && orders.length > 0) {
+            const batch = writeBatch(db);
+            let count = 0;
+            
+            for (const order of orders) {
+              const orderId = order.srid;
+              const docRef = doc(db, 'users', userId, 'marketplace_orders', `wb_${orderId}`);
+              batch.set(docRef, {
+                platform: 'wb',
+                orderId: orderId,
+                date: order.date,
+                product: order.subject,
+                article: order.supplierArticle,
+                price: order.finishedPrice,
+                status: order.isCancel ? 'cancelled' : 'ordered',
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+              
+              count++;
+              totalOrders++;
+              if (count === 400) {
+                await batch.commit();
+                count = 0;
+              }
+            }
+            if (count > 0) {
+              await batch.commit();
+            }
+          }
+        } catch (err: any) {
+          if (err.response?.status === 401) {
+            console.warn(`WB API Token ${token.substring(0, 10)}... is invalid or expired (401 Unauthorized). Skipping.`);
+          } else {
+            console.error(`Error fetching WB orders for token ${token.substring(0, 10)}...:`, err.message);
+            hasError = true;
+            errorMsg = err.message;
+          }
+        }
+      }
+      
+      if (hasError && totalOrders === 0) {
+        return res.status(500).json({ error: errorMsg });
+      }
+      
+      // Aggregate stats after fetching
+      await aggregateUserStats(userId);
+      
+      res.json({ success: true, count: totalOrders });
+    } catch (err: any) {
+      console.error('Error in manual WB fetch:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- WB Orders Fetcher ---
   const fetchWbOrders = async (daysBack: number = 45) => {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
       for (const userDoc of usersSnapshot.docs) {
         const tokens = userDoc.data().tokens || {};
-        if (tokens.wb) {
+        
+        // Get tokens from products as well
+        const productsSnapshot = await getDocs(collection(db, 'users', userDoc.id, 'products'));
+        const productTokens = new Set<string>();
+        productsSnapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.apiWb) productTokens.add(data.apiWb);
+        });
+        
+        const allWbTokens = new Set<string>();
+        if (tokens.wb) allWbTokens.add(tokens.wb);
+        productTokens.forEach(t => allWbTokens.add(t));
+        
+        if (allWbTokens.size > 0) {
           try {
             const dateFrom = new Date();
             dateFrom.setDate(dateFrom.getDate() - daysBack);
             const dateStr = dateFrom.toISOString().split('T')[0];
             
-            const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
-              headers: { 'Authorization': tokens.wb }
-            });
-            
-            const orders = res.data;
-            if (orders && Array.isArray(orders) && orders.length > 0) {
-              const batch = writeBatch(db);
-              let count = 0;
-              
-              for (const order of orders) {
-                const orderId = order.srid;
-                const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
-                batch.set(docRef, {
-                  platform: 'wb',
-                  orderId: orderId,
-                  date: order.date,
-                  product: order.subject,
-                  article: order.supplierArticle,
-                  price: order.finishedPrice,
-                  status: order.isCancel ? 'cancelled' : 'ordered',
-                  updatedAt: serverTimestamp()
-                }, { merge: true });
+            for (const token of allWbTokens) {
+              try {
+                const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
+                  headers: { 'Authorization': token }
+                });
                 
-                count++;
-                if (count === 400) {
-                  await batch.commit();
-                  count = 0;
+                const orders = res.data;
+                if (orders && Array.isArray(orders) && orders.length > 0) {
+                  const batch = writeBatch(db);
+                  let count = 0;
+                  
+                  for (const order of orders) {
+                    const orderId = order.srid;
+                    const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
+                    batch.set(docRef, {
+                      platform: 'wb',
+                      orderId: orderId,
+                      date: order.date,
+                      product: order.subject,
+                      article: order.supplierArticle,
+                      price: order.finishedPrice,
+                      status: order.isCancel ? 'cancelled' : 'ordered',
+                      updatedAt: serverTimestamp()
+                    }, { merge: true });
+                    
+                    count++;
+                    if (count === 400) {
+                      await batch.commit();
+                      count = 0;
+                    }
+                  }
+                  if (count > 0) {
+                    await batch.commit();
+                  }
+                  console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
+                }
+              } catch (err: any) {
+                if (err.response?.status === 401) {
+                  console.warn(`WB API Token ${token.substring(0, 10)}... for user ${userDoc.id} is invalid or expired (401 Unauthorized). Skipping.`);
+                } else {
+                  console.error(`Error fetching WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...:`, err.message);
                 }
               }
-              if (count > 0) {
-                await batch.commit();
-              }
-              console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id}`);
             }
+            
+            // Aggregate stats after fetching for this user
+            await aggregateUserStats(userDoc.id);
+            
           } catch (err: any) {
-            console.error(`Error fetching WB orders for user ${userDoc.id}:`, err.message);
+            console.error(`Error in WB fetch loop for user ${userDoc.id}:`, err.message);
           }
         }
       }
@@ -1891,10 +2114,10 @@ async function startServer() {
     fetchWbOrders(45);
   });
 
-  // Every day at 00:00 MSK (21:00 UTC) fetch all-time (e.g. 1000 days back)
+  // Every day at 00:00 MSK (21:00 UTC) fetch all-time (e.g. 3000 days back)
   cron.schedule('0 21 * * *', () => {
-    console.log('Running daily all-time WB fetch (1000 days)');
-    fetchWbOrders(1000);
+    console.log('Running daily all-time WB fetch (3000 days)');
+    fetchWbOrders(3000);
   });
 
   // --- Scheduler Loop ---

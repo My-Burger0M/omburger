@@ -98,6 +98,9 @@ const sanitizeData = (obj: any): any => {
 };
 
 const deserializeFromFirestore = (obj: any): any => {
+  if (obj && typeof obj.toDate === 'function') {
+    return obj;
+  }
   if (Array.isArray(obj)) {
     return obj.map(item => deserializeFromFirestore(item));
   } else if (obj !== null && typeof obj === 'object') {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Info, Package, X, Upload, Image as ImageIcon, Trash2, AlertTriangle, RefreshCw } from 'lucide-react';
-import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -40,6 +40,7 @@ export default function Products() {
   
   // Stats
   const [stats, setStats] = useState({ total: 0, wb: 0, ozon: 0 });
+  const [isSyncingWb, setIsSyncingWb] = useState(false);
   
   // Form State
   const [newProduct, setNewProduct] = useState({
@@ -56,8 +57,35 @@ export default function Products() {
   const [previewUrl, setPreviewUrl] = useState<string>('');
 
   useEffect(() => {
-    fetchProducts();
+    if (!currentUser) return;
+    
     fetchCostSettings();
+    
+    const qProducts = query(collection(db, 'users', currentUser.uid, 'products'), orderBy('createdAt', 'desc'));
+    const unsubscribeProducts = onSnapshot(qProducts, (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Product[];
+      setProducts(productsData);
+      setIsLoading(false);
+    });
+
+    const unsubscribeStats = onSnapshot(doc(db, 'users', currentUser.uid, 'stats', 'dashboard'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setStats({
+          total: data.total?.all || 0,
+          wb: data.total?.wb || 0,
+          ozon: data.total?.ozon || 0
+        });
+      }
+    });
+    
+    return () => {
+      unsubscribeProducts();
+      unsubscribeStats();
+    };
   }, [currentUser]);
 
   const fetchCostSettings = async () => {
@@ -73,38 +101,6 @@ export default function Products() {
       setCostSettings(data);
     } catch (error) {
       console.error("Error fetching cost settings:", error);
-    }
-  };
-
-  const fetchProducts = async () => {
-    if (!currentUser) return;
-    try {
-      const q = query(collection(db, 'users', currentUser.uid, 'products'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const productsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Product[];
-      setProducts(productsData);
-      
-      // Fetch actual orders for stats
-      const ordersQ = query(collection(db, 'users', currentUser.uid, 'marketplace_orders'));
-      const ordersSnapshot = await getDocs(ordersQ);
-      
-      let total = 0, wb = 0, ozon = 0;
-      
-      ordersSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        total++;
-        if (data.platform === 'wb') wb++;
-        if (data.platform === 'ozon') ozon++;
-      });
-      
-      setStats({ total, wb, ozon });
-    } catch (error) {
-      console.error("Error fetching products:", error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -200,7 +196,6 @@ export default function Products() {
       setSelectedFile(null);
       setPreviewUrl('');
       setProductToEdit(null);
-      fetchProducts();
     } catch (error) {
       console.error("Error saving product:", error);
       alert('Ошибка при сохранении товара');
@@ -212,7 +207,6 @@ export default function Products() {
     try {
       await deleteDoc(doc(db, 'users', currentUser.uid, 'products', productToDelete));
       setProductToDelete(null);
-      fetchProducts();
     } catch (error) {
       console.error("Error deleting product:", error);
       alert("Ошибка при удалении товара");
@@ -221,54 +215,50 @@ export default function Products() {
 
   const handleSync = async () => {
     if (!currentUser) return;
-    setIsSyncing(true);
+    setIsSyncingWb(true);
     
     try {
-      // Simulate API fetch delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const response = await fetch('/api/wb/fetch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ userId: currentUser.uid })
+      });
       
-      let updatedProducts = [...products];
-      let newTotal = 0, newWb = 0, newOzon = 0;
-
-      for (let i = 0; i < updatedProducts.length; i++) {
-        const p = updatedProducts[i];
-        if (p.apiWb || p.apiOzon) {
-          // Mock sales calculation based on API connection
-          const mockSales = Math.floor(Math.random() * 50) + 10;
-          
-          await updateDoc(doc(db, 'users', currentUser.uid, 'products', p.id), {
-            salesPercent: mockSales
-          });
-          
-          updatedProducts[i] = { ...p, salesPercent: mockSales };
-          
-          newTotal += mockSales;
-          if (p.apiWb) newWb += mockSales;
-          if (p.apiOzon) newOzon += mockSales;
-        } else if (p.salesPercent) {
-          newTotal += p.salesPercent;
-        }
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка загрузки');
       }
       
-      setProducts(updatedProducts);
-      setStats({ total: newTotal, wb: newWb, ozon: newOzon });
-    } catch (error) {
+      alert(`Успешно загружено ${data.count} заказов`);
+    } catch (error: any) {
       console.error("Error syncing with API:", error);
-      alert("Ошибка при синхронизации с API");
+      alert("Ошибка при синхронизации с API: " + error.message);
     } finally {
-      setIsSyncing(false);
+      setIsSyncingWb(false);
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
-          Товары
-          <span className="text-sm font-normal text-gray-400 bg-[#1a1a1a] px-3 py-1 rounded-full border border-white/5">
-            Обновление данных: 00:00 МСК
-          </span>
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
+            Товары
+            <span className="text-sm font-normal text-gray-400 bg-[#1a1a1a] px-3 py-1 rounded-full border border-white/5">
+              Обновление данных: 00:00 МСК
+            </span>
+          </h1>
+          <button 
+            onClick={handleSync}
+            disabled={isSyncingWb}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={isSyncingWb ? 'animate-spin' : ''} />
+            {isSyncingWb ? 'Загрузка...' : 'Принудительная загрузка ВБ'}
+          </button>
+        </div>
       </div>
 
       {/* Stats Row */}

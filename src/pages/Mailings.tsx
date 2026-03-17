@@ -848,7 +848,7 @@ export default function Mailings() {
                           <span className="text-xs text-gray-500 ml-2">({msg.platform})</span>
                         </div>
                         <div className="text-xs text-gray-500">
-                          {msg.createdAt?.toDate().toLocaleString('ru-RU')}
+                        {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleString('ru-RU') : (msg.createdAt instanceof Date ? msg.createdAt.toLocaleString('ru-RU') : 'Дата не указана')}
                         </div>
                       </div>
                       <div className="text-sm text-gray-400 mb-2 line-clamp-2">
@@ -889,7 +889,7 @@ export default function Mailings() {
                         {note.text || '[Медиа сообщение]'}
                       </div>
                       <div className="text-xs text-gray-500 ml-4 whitespace-nowrap">
-                        {note.createdAt?.toDate().toLocaleString('ru-RU')}
+                        {note.createdAt?.toDate ? note.createdAt.toDate().toLocaleString('ru-RU') : (note.createdAt instanceof Date ? note.createdAt.toLocaleString('ru-RU') : 'Дата не указана')}
                       </div>
                     </div>
                     {note.mediaUrl && (
