@@ -247,7 +247,7 @@ export default function Products() {
           <h1 className="text-3xl font-bold flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3">
             Товары
             <span className="text-sm font-normal text-gray-400 bg-[#1a1a1a] px-3 py-1 rounded-full border border-white/5">
-              Обновление данных: 00:00 МСК
+              Обновление данных: каждые 30 мин
             </span>
           </h1>
           <button 

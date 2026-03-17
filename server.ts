@@ -1956,14 +1956,12 @@ async function startServer() {
       let hasError = false;
       let errorMsg = '';
       
-      // Fetch for all time (e.g. 3000 days back)
-      const dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 3000);
-      const dateStr = dateFrom.toISOString().split('T')[0];
+      // Fetch for all time (e.g. from 2020)
+      const dateStr = '2020-01-01T00:00:00';
       
       for (const token of allWbTokens) {
         try {
-          const response = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
+          const response = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(dateStr)}&flag=0`, {
             headers: { 'Authorization': token }
           });
           
@@ -2023,7 +2021,7 @@ async function startServer() {
   });
 
   // --- WB Orders Fetcher ---
-  const fetchWbOrders = async (daysBack: number = 45) => {
+  const fetchWbOrders = async (daysBack: number = 3000) => {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
       for (const userDoc of usersSnapshot.docs) {
@@ -2045,11 +2043,12 @@ async function startServer() {
           try {
             const dateFrom = new Date();
             dateFrom.setDate(dateFrom.getDate() - daysBack);
-            const dateStr = dateFrom.toISOString().split('T')[0];
+            // Use proper format for WB API
+            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00' : dateFrom.toISOString().split('.')[0];
             
             for (const token of allWbTokens) {
               try {
-                const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${dateStr}`, {
+                const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(dateStr)}&flag=0`, {
                   headers: { 'Authorization': token }
                 });
                 
@@ -2106,17 +2105,11 @@ async function startServer() {
   };
 
   // Run WB fetcher shortly after startup
-  setTimeout(() => fetchWbOrders(45), 10000);
+  setTimeout(() => fetchWbOrders(3000), 10000);
   
-  // Every hour on the hour MSK (which is just every hour on the hour in any timezone)
-  cron.schedule('0 * * * *', () => {
-    console.log('Running hourly WB fetch (45 days)');
-    fetchWbOrders(45);
-  });
-
-  // Every day at 00:00 MSK (21:00 UTC) fetch all-time (e.g. 3000 days back)
-  cron.schedule('0 21 * * *', () => {
-    console.log('Running daily all-time WB fetch (3000 days)');
+  // Every 30 minutes fetch all-time
+  cron.schedule('*/30 * * * *', () => {
+    console.log('Running 30-min WB fetch (all time)');
     fetchWbOrders(3000);
   });
 
