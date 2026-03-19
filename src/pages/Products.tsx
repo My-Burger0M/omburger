@@ -40,7 +40,6 @@ export default function Products() {
   
   // Stats
   const [stats, setStats] = useState({ total: 0, wb: 0, ozon: 0 });
-  const [isSyncingWb, setIsSyncingWb] = useState(false);
   
   // Form State
   const [newProduct, setNewProduct] = useState({
@@ -213,33 +212,6 @@ export default function Products() {
     }
   };
 
-  const handleSync = async () => {
-    if (!currentUser) return;
-    setIsSyncingWb(true);
-    
-    try {
-      const response = await fetch('/api/wb/fetch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ userId: currentUser.uid })
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка загрузки');
-      }
-      
-      alert(`Успешно загружено ${data.count} заказов`);
-    } catch (error: any) {
-      console.error("Error syncing with API:", error);
-      alert("Ошибка при синхронизации с API: " + error.message);
-    } finally {
-      setIsSyncingWb(false);
-    }
-  };
-
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between mb-8">
@@ -250,14 +222,6 @@ export default function Products() {
               Обновление данных: каждые 30 мин
             </span>
           </h1>
-          <button 
-            onClick={handleSync}
-            disabled={isSyncingWb}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={isSyncingWb ? 'animate-spin' : ''} />
-            {isSyncingWb ? 'Загрузка...' : 'Принудительная загрузка ВБ'}
-          </button>
         </div>
       </div>
 

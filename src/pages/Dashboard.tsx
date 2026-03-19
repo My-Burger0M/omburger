@@ -12,6 +12,7 @@ import SendStatsModal from '../components/SendStatsModal';
 import MarketplaceOrdersModal from '../components/MarketplaceOrdersModal';
 
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 export default function Dashboard() {
   const { currentUser } = useAuth();
@@ -32,40 +33,15 @@ export default function Dashboard() {
   
   const [todayStats, setTodayStats] = useState({ total: 0, wb: 0, ozon: 0 });
   const [monthStats, setMonthStats] = useState({ total: 0, wb: 0, ozon: 0 });
-  const [isSyncingWb, setIsSyncingWb] = useState(false);
+  const [wbChartData, setWbChartData] = useState<any[]>([]);
   
   const [marketplaceOrders, setMarketplaceOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [isMarketplaceModalOpen, setIsMarketplaceModalOpen] = useState(false);
   const [marketplaceModalTitle, setMarketplaceModalTitle] = useState('');
   const [marketplaceModalOrders, setMarketplaceModalOrders] = useState<any[]>([]);
-
-  const handleForceLoadWb = async () => {
-    if (!currentUser) return;
-    setIsSyncingWb(true);
-    
-    try {
-      const response = await fetch('/api/wb/fetch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ userId: currentUser.uid })
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Ошибка загрузки');
-      }
-      
-      alert(`Успешно загружено ${data.count} заказов`);
-    } catch (error: any) {
-      console.error("Error syncing with API:", error);
-      alert("Ошибка при синхронизации с API: " + error.message);
-    } finally {
-      setIsSyncingWb(false);
-    }
-  };
+  
+  const [isSendingToTg, setIsSendingToTg] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -84,6 +60,9 @@ export default function Dashboard() {
           wb: data.month?.wb || 0,
           ozon: data.month?.ozon || 0
         });
+        if (data.chartData) {
+          setWbChartData(data.chartData);
+        }
       }
     });
 
@@ -240,19 +219,78 @@ export default function Dashboard() {
     setIsMarketplaceModalOpen(true);
   };
 
+  const sendToTelegramSingleDay = async (day: any, dayOfWeek: string) => {
+    if (!currentUser) return;
+    setIsSendingToTg(true);
+    try {
+      const total = day.wb + day.ozon;
+      let message = `📦 *Заказы за ${day.name} (${dayOfWeek})*\n\n`;
+      message += `🟣 Wildberries: ${day.wb} шт.\n`;
+      message += `🔵 Ozon: ${day.ozon} шт.\n\n`;
+      message += `Всего заказов: ${total} шт.`;
+
+      await axios.post('/api/notifications/send', {
+        userId: currentUser.uid,
+        text: message
+      });
+      alert('Данные успешно отправлены в Telegram!');
+    } catch (err) {
+      console.error('Error sending to TG:', err);
+      alert('Ошибка при отправке в Telegram');
+    } finally {
+      setIsSendingToTg(false);
+    }
+  };
+
+  const sendToTelegramAllDays = async () => {
+    if (!currentUser || wbChartData.length === 0) return;
+    setIsSendingToTg(true);
+    try {
+      const startDate = wbChartData[0].name;
+      const endDate = wbChartData[wbChartData.length - 1].name;
+      
+      let message = `📦 *Детализация заказов за 7 дней (${startDate} - ${endDate})*\n\n`;
+      
+      let totalWb = 0;
+      let totalOzon = 0;
+
+      wbChartData.forEach(day => {
+        const dateParts = day.name.split('.');
+        const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+        const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        const dayOfWeek = daysOfWeek[dateObj.getDay()];
+        
+        const total = day.wb + day.ozon;
+        totalWb += day.wb;
+        totalOzon += day.ozon;
+        
+        message += `📅 *${day.name} (${dayOfWeek})*\n`;
+        message += `🟣 WB: ${day.wb} | 🔵 Ozon: ${day.ozon} | Всего: ${total}\n\n`;
+      });
+
+      message += `📊 *Итого за период:*\n`;
+      message += `🟣 Wildberries: ${totalWb} шт.\n`;
+      message += `🔵 Ozon: ${totalOzon} шт.\n`;
+      message += `Всего заказов: ${totalWb + totalOzon} шт.`;
+
+      await axios.post('/api/notifications/send', {
+        userId: currentUser.uid,
+        text: message
+      });
+      alert('Данные успешно отправлены в Telegram!');
+    } catch (err) {
+      console.error('Error sending to TG:', err);
+      alert('Ошибка при отправке в Telegram');
+    } finally {
+      setIsSendingToTg(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
           <h1 className="text-3xl font-bold">Дашборд</h1>
-          <button 
-            onClick={handleForceLoadWb}
-            disabled={isSyncingWb}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={isSyncingWb ? 'animate-spin' : ''} />
-            {isSyncingWb ? 'Загрузка...' : 'Принудительная загрузка ВБ'}
-          </button>
         </div>
       </div>
 
@@ -413,6 +451,71 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* 7-Day Orders Table */}
+      <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">Детализация заказов за 7 дней</h2>
+          <button
+            onClick={sendToTelegramAllDays}
+            disabled={isSendingToTg || wbChartData.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+          >
+            {isSendingToTg ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Отправить все
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10 text-gray-400 text-sm uppercase">
+                <th className="py-3 px-4 font-medium">Дата</th>
+                <th className="py-3 px-4 font-medium">День недели</th>
+                <th className="py-3 px-4 font-medium">Wildberries</th>
+                <th className="py-3 px-4 font-medium">Ozon</th>
+                <th className="py-3 px-4 font-medium">Всего</th>
+                <th className="py-3 px-4 font-medium text-right">Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              {wbChartData.map((day, index) => {
+                const dateParts = day.name.split('.');
+                const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+                const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+                const dayOfWeek = daysOfWeek[dateObj.getDay()];
+                const total = day.wb + day.ozon;
+                
+                return (
+                  <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="py-3 px-4">{day.name}</td>
+                    <td className="py-3 px-4">{dayOfWeek}</td>
+                    <td className="py-3 px-4 text-purple-400">{day.wb} шт</td>
+                    <td className="py-3 px-4 text-blue-400">{day.ozon} шт</td>
+                    <td className="py-3 px-4 font-bold">{total} шт</td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => sendToTelegramSingleDay(day, dayOfWeek)}
+                        disabled={isSendingToTg}
+                        className="p-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg transition-colors inline-flex"
+                        title="Отправить в Telegram"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {wbChartData.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
+                    Нет данных за последние 7 дней
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Bottom Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <BottomCard imageKey="bot1" title="Заказы за сегодня" value={todayStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
@@ -435,6 +538,7 @@ export default function Dashboard() {
         isOpen={isSendModalOpen}
         onClose={() => setIsSendModalOpen(false)}
         statsData={statsData}
+        wbChartData={wbChartData}
         currentDate={currentDate}
       />
 

@@ -674,16 +674,16 @@ export default function BotScenarios() {
               {selectedNode.data.type === 'message' && (
                 <div className="space-y-4 border-t border-white/10 pt-4 mt-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1 flex items-center gap-1"><ImageIcon size={12}/> Медиа (URL фото/видео или ссылка на пост ТГ)</label>
+                    <label className="block text-xs text-gray-400 mb-1 flex items-center gap-1"><ImageIcon size={12}/> Медиа (URL фото/видео, ссылка на пост ТГ или ВК)</label>
                     <input 
                       type="text" 
                       value={selectedNode.data.mediaUrl as string || ''} 
                       onChange={(e) => updateNodeData('mediaUrl', e.target.value)}
-                      placeholder="https://t.me/pm_video1/8 или URL картинки"
+                      placeholder="https://vk.com/photo-123_456 или URL картинки"
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">
-                      Поддерживаются прямые ссылки на картинки и ссылки на посты Telegram (например: https://t.me/pm_video1/8). Бот ВКонтакте также сможет подхватить медиа из Telegram.
+                      Поддерживаются прямые ссылки на картинки, ссылки на посты Telegram, а также ссылки на фото/видео ВКонтакте (например: https://vk.com/photo-123_456).
                     </p>
                   </div>
 

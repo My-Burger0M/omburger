@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Calculator, DollarSign, ShoppingBag, Package } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calculator, DollarSign, ShoppingBag, Package, Link as LinkIcon } from 'lucide-react';
 
 interface GlobalStats {
   wbPurchases: number;
@@ -17,8 +17,15 @@ interface MonthData {
   revenue: number;
   mpExpenses: number;
   costPrice: number;
+  ofrGroupId?: string;
   total: number;
   createdAt: any;
+}
+
+interface OFRExpenseGroup {
+  id: string;
+  title: string;
+  items: { amount: number }[];
 }
 
 export default function UnitEconomy() {
@@ -36,6 +43,7 @@ export default function UnitEconomy() {
     ozonPayouts: 0,
   });
   const [months, setMonths] = useState<MonthData[]>([]);
+  const [ofrGroups, setOfrGroups] = useState<OFRExpenseGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Calculator state
@@ -43,6 +51,7 @@ export default function UnitEconomy() {
   const [calcRevenue, setCalcRevenue] = useState<number | ''>('');
   const [calcMpExpenses, setCalcMpExpenses] = useState<number | ''>('');
   const [calcCostPrice, setCalcCostPrice] = useState<number | ''>('');
+  const [calcOfrGroupId, setCalcOfrGroupId] = useState<string>('');
 
   // Edit state
   const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
@@ -50,6 +59,19 @@ export default function UnitEconomy() {
   useEffect(() => {
     if (currentUser) {
       fetchData();
+      
+      const unsubscribeOfr = onSnapshot(
+        collection(db, 'users', currentUser.uid, 'ofr_expenses'),
+        (snapshot) => {
+          const groups: OFRExpenseGroup[] = [];
+          snapshot.forEach((doc) => {
+            groups.push({ id: doc.id, ...doc.data() } as OFRExpenseGroup);
+          });
+          setOfrGroups(groups);
+        }
+      );
+      
+      return () => unsubscribeOfr();
     }
   }, [currentUser]);
 
@@ -77,6 +99,13 @@ export default function UnitEconomy() {
     }
   };
 
+  const getOfrTotal = (groupId?: string) => {
+    if (!groupId) return 0;
+    const group = ofrGroups.find(g => g.id === groupId);
+    if (!group) return 0;
+    return group.items.reduce((sum, item) => sum + item.amount, 0);
+  };
+
   const handleLocalStatChange = (field: keyof GlobalStats, value: number) => {
     setLocalStats(prev => ({ ...prev, [field]: value }));
   };
@@ -101,9 +130,12 @@ export default function UnitEconomy() {
     const revenue = Number(calcRevenue) || 0;
     const mpExpenses = Number(calcMpExpenses) || 0;
     const costPrice = Number(calcCostPrice) || 0;
-    const total = revenue - mpExpenses - costPrice;
+    const ofrTotal = getOfrTotal(calcOfrGroupId);
+    // Add OFR total (assuming OFR expenses are entered as negative numbers, so we add them)
+    // If they are positive, we should subtract. Let's assume they are negative as per the screenshot.
+    const total = revenue - mpExpenses - costPrice + ofrTotal;
 
-    const monthData = {
+    const monthData: any = {
       monthName: calcMonth,
       revenue,
       mpExpenses,
@@ -111,6 +143,12 @@ export default function UnitEconomy() {
       total,
       updatedAt: serverTimestamp()
     };
+    
+    if (calcOfrGroupId) {
+      monthData.ofrGroupId = calcOfrGroupId;
+    } else {
+      monthData.ofrGroupId = null;
+    }
 
     try {
       if (editingMonthId) {
@@ -130,6 +168,7 @@ export default function UnitEconomy() {
       setCalcRevenue('');
       setCalcMpExpenses('');
       setCalcCostPrice('');
+      setCalcOfrGroupId('');
     } catch (error) {
       console.error('Error saving month:', error);
     }
@@ -141,6 +180,7 @@ export default function UnitEconomy() {
     setCalcRevenue(month.revenue);
     setCalcMpExpenses(month.mpExpenses);
     setCalcCostPrice(month.costPrice);
+    setCalcOfrGroupId(month.ofrGroupId || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -158,13 +198,20 @@ export default function UnitEconomy() {
     return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
   };
 
-  const totalAllTime = months.reduce((acc, month) => {
+  const dynamicMonths = months.map(m => {
+    const ofrTotal = getOfrTotal(m.ofrGroupId);
+    const dynamicTotal = m.revenue - m.mpExpenses - m.costPrice + ofrTotal;
+    return { ...m, ofrTotal, dynamicTotal };
+  });
+
+  const totalAllTime = dynamicMonths.reduce((acc, month) => {
     acc.revenue += month.revenue || 0;
     acc.mpExpenses += month.mpExpenses || 0;
     acc.costPrice += month.costPrice || 0;
-    acc.total += month.total || 0;
+    acc.ofrExpenses += month.ofrTotal || 0;
+    acc.total += month.dynamicTotal || 0;
     return acc;
-  }, { revenue: 0, mpExpenses: 0, costPrice: 0, total: 0 });
+  }, { revenue: 0, mpExpenses: 0, costPrice: 0, ofrExpenses: 0, total: 0 });
 
   if (loading) {
     return (
@@ -273,7 +320,7 @@ export default function UnitEconomy() {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Выручка:</label>
                 <div className="relative">
@@ -317,9 +364,26 @@ export default function UnitEconomy() {
               </div>
 
               <div>
+                <label className="block text-sm text-gray-400 mb-2 flex items-center gap-1">
+                  <LinkIcon size={14} className="text-purple-400" />
+                  Группа ОФР:
+                </label>
+                <select
+                  value={calcOfrGroupId}
+                  onChange={(e) => setCalcOfrGroupId(e.target.value)}
+                  className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 appearance-none"
+                >
+                  <option value="">Без ОФР</option>
+                  {ofrGroups.map(group => (
+                    <option key={group.id} value={group.id}>{group.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm text-gray-400 mb-2">Итого:</label>
                 <div className="w-full bg-green-500/20 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 font-bold flex justify-between items-center">
-                  <span>{formatCurrency((Number(calcRevenue) || 0) - (Number(calcMpExpenses) || 0) - (Number(calcCostPrice) || 0))}</span>
+                  <span>{formatCurrency((Number(calcRevenue) || 0) - (Number(calcMpExpenses) || 0) - (Number(calcCostPrice) || 0) + getOfrTotal(calcOfrGroupId))}</span>
                 </div>
               </div>
             </div>
@@ -353,6 +417,10 @@ export default function UnitEconomy() {
               <span className="text-gray-400">Себе-сть:</span>
               <span className="font-medium">{formatCurrency(totalAllTime.costPrice)}</span>
             </div>
+            <div className="flex justify-between items-center bg-[#222] p-3 rounded-xl border border-white/5">
+              <span className="text-gray-400 flex items-center gap-1"><LinkIcon size={14} /> ОФР:</span>
+              <span className="font-medium text-red-400">{formatCurrency(totalAllTime.ofrExpenses)}</span>
+            </div>
             <div className="flex justify-between items-center bg-green-500/10 p-3 rounded-xl border border-green-500/20">
               <span className="text-green-500/80 font-medium">Итого:</span>
               <span className="text-green-400 font-bold">{formatCurrency(totalAllTime.total)}</span>
@@ -363,7 +431,7 @@ export default function UnitEconomy() {
 
       {/* Months Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-6">
-        {months.map(month => (
+        {dynamicMonths.map(month => (
           <div key={month.id} className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 relative group">
             <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
               <button onClick={() => handleEditMonth(month)} className="p-1.5 bg-[#222] hover:bg-purple-600 rounded-lg text-gray-400 hover:text-white transition-colors">
@@ -389,9 +457,15 @@ export default function UnitEconomy() {
                 <span className="text-gray-400">Себе-сть:</span>
                 <span className="font-medium">{formatCurrency(month.costPrice)}</span>
               </div>
+              {month.ofrGroupId && (
+                <div className="flex justify-between items-center bg-[#222] p-2.5 rounded-lg border border-white/5 text-sm">
+                  <span className="text-gray-400 flex items-center gap-1"><LinkIcon size={12} /> ОФР:</span>
+                  <span className="font-medium text-red-400">{formatCurrency(month.ofrTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center bg-[#222] p-2.5 rounded-lg border border-white/5 text-sm mt-4">
                 <span className="text-gray-300 font-medium">Итого:</span>
-                <span className="font-bold text-white">{formatCurrency(month.total)}</span>
+                <span className="font-bold text-white">{formatCurrency(month.dynamicTotal)}</span>
               </div>
             </div>
           </div>
@@ -405,6 +479,7 @@ export default function UnitEconomy() {
             setCalcRevenue('');
             setCalcMpExpenses('');
             setCalcCostPrice('');
+            setCalcOfrGroupId('');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           className="bg-[#1a1a1a] rounded-2xl border border-dashed border-white/20 p-6 flex flex-col items-center justify-center text-gray-400 hover:text-white hover:border-purple-500 hover:bg-purple-500/5 transition-all cursor-pointer min-h-[300px]"

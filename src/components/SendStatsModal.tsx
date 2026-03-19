@@ -12,12 +12,13 @@ interface SendStatsModalProps {
   isOpen: boolean;
   onClose: () => void;
   statsData: any[];
+  wbChartData?: any[];
   currentDate: Date;
 }
 
-export default function SendStatsModal({ isOpen, onClose, statsData, currentDate }: SendStatsModalProps) {
+export default function SendStatsModal({ isOpen, onClose, statsData, wbChartData = [], currentDate }: SendStatsModalProps) {
   const { currentUser } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<string>('month'); // 'month' or specific date 'YYYY-MM-DD'
+  const [selectedDate, setSelectedDate] = useState<string>('month'); // 'month', 'wb7days', or specific date 'YYYY-MM-DD'
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -33,7 +34,23 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
 
   const prepareMessage = () => {
     let message = '';
-    if (selectedDate === 'month') {
+    if (selectedDate === 'wb7days') {
+      let totalWb = 0;
+      let totalOzon = 0;
+      
+      wbChartData.forEach(day => {
+        totalWb += day.wb;
+        totalOzon += day.ozon;
+      });
+      
+      const startDate = wbChartData.length > 0 ? wbChartData[0].name : '';
+      const endDate = wbChartData.length > 0 ? wbChartData[wbChartData.length - 1].name : '';
+      
+      message = `📦 *Заказы за последние 7 дней (${startDate} - ${endDate})*\n\n`;
+      message += `🟣 Wildberries: ${totalWb} шт.\n`;
+      message += `🔵 Ozon: ${totalOzon} шт.\n\n`;
+      message += `Всего заказов: ${totalWb + totalOzon} шт.`;
+    } else if (selectedDate === 'month') {
         const monthName = format(currentDate, 'LLLL yyyy', { locale: ru });
         
         let totalTg = 0;
@@ -170,28 +187,40 @@ export default function SendStatsModal({ isOpen, onClose, statsData, currentDate
                 }`}
               >
                 <Calendar className="w-6 h-6" />
-                <span className="text-sm font-medium">За весь месяц</span>
+                <span className="text-sm font-medium text-center">Активность за месяц</span>
               </button>
               
-              <div className="relative">
+              <button
+                onClick={() => setSelectedDate('wb7days')}
+                className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all ${
+                  selectedDate === 'wb7days' 
+                    ? 'bg-purple-500/20 border-purple-500 text-white' 
+                    : 'bg-[#2a2a2a] border-white/10 text-gray-400 hover:bg-[#333]'
+                }`}
+              >
+                <Calendar className="w-6 h-6" />
+                <span className="text-sm font-medium text-center">Заказы за 7 дней</span>
+              </button>
+
+              <div className="relative col-span-2 mt-2">
                 <input
                   type="date"
-                  value={selectedDate !== 'month' ? selectedDate : ''}
+                  value={selectedDate !== 'month' && selectedDate !== 'wb7days' ? selectedDate : ''}
                   onChange={(e) => setSelectedDate(e.target.value)}
                   min={format(startOfMonth(currentDate), 'yyyy-MM-dd')}
                   max={format(endOfMonth(currentDate), 'yyyy-MM-dd')}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
                 <button
-                  className={`w-full h-full p-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all ${
-                    selectedDate !== 'month' 
-                      ? 'bg-purple-500/20 border-purple-500 text-white' 
+                  className={`w-full p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
+                    selectedDate !== 'month' && selectedDate !== 'wb7days'
+                      ? 'bg-green-500/20 border-green-500 text-white' 
                       : 'bg-[#2a2a2a] border-white/10 text-gray-400 hover:bg-[#333]'
                   }`}
                 >
                   <Calendar className="w-6 h-6" />
                   <span className="text-sm font-medium">
-                    {selectedDate !== 'month' ? format(new Date(selectedDate), 'dd.MM.yyyy') : 'Выбрать день'}
+                    {selectedDate !== 'month' && selectedDate !== 'wb7days' ? format(new Date(selectedDate), 'dd.MM.yyyy') : 'Выбрать конкретный день (активность)'}
                   </span>
                 </button>
               </div>

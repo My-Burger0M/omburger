@@ -6,7 +6,7 @@ import os from 'os';
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 import { db, auth, storage } from './server-firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs, query, arrayUnion, arrayRemove, where, setLogLevel, writeBatch, runTransaction } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { VK } from 'vk-io';
 import { Telegraf } from 'telegraf';
@@ -171,8 +171,14 @@ async function startServer() {
         if (user) username = `${user.first_name} ${user.last_name}`;
       } catch (e) {}
       
-      const payload = context.eventPayload as any;
-      const text = payload?.cmd || payload?.command || JSON.stringify(payload) || 'Button clicked';
+      let payload = context.eventPayload as any;
+      if (typeof payload === 'string') {
+        try {
+          payload = JSON.parse(payload);
+        } catch (e) {}
+      }
+      
+      const text = payload?.cmd || payload?.command || (typeof payload === 'string' ? payload : JSON.stringify(payload)) || 'Button clicked';
       
       let buttonText = text;
       try {
@@ -217,7 +223,7 @@ async function startServer() {
       }
 
       if (saved && userId) {
-        processScenario('vk', chatId, text, payload?.cmd || null, userId).catch(e => console.error('Error in processScenario:', e));
+        processScenario('vk', chatId, text, payload, userId).catch(e => console.error('Error in processScenario:', e));
       }
     });
   };
@@ -1057,13 +1063,48 @@ async function startServer() {
         ? doc(db, 'chats', `${platform}_${chatId}`, 'messages', msgDocId)
         : doc(collection(db, 'chats', `${platform}_${chatId}`, 'messages')); // Auto-ID if no messageId
 
-      // Check if it exists (idempotency)
+      // Check if it exists (idempotency) and save atomically
+      let isDuplicate = false;
       if (msgDocId) {
-         const existingDoc = await getDoc(msgRef);
-         if (existingDoc.exists()) {
-             console.log(`Duplicate message ignored (firestore): ${msgDocId}`);
-             return false;
-         }
+        try {
+          await runTransaction(db, async (transaction) => {
+            const existingDoc = await transaction.get(msgRef);
+            if (existingDoc.exists()) {
+              isDuplicate = true;
+              return;
+            }
+            
+            const messageData: any = {
+              text,
+              sender: 'user',
+              timestamp: serverTimestamp()
+            };
+            if (messageId) messageData.externalId = messageId;
+            if (mediaUrl) messageData.mediaUrl = mediaUrl;
+            if (mediaType) messageData.mediaType = mediaType;
+            
+            transaction.set(msgRef, messageData);
+          });
+        } catch (e) {
+          console.error('Transaction failed:', e);
+          return false;
+        }
+        
+        if (isDuplicate) {
+          console.log(`Duplicate message ignored (firestore transaction): ${msgDocId}`);
+          return false;
+        }
+      } else {
+        // Add message to subcollection without transaction if no msgDocId
+        const messageData: any = {
+          text,
+          sender: 'user',
+          timestamp: serverTimestamp()
+        };
+        if (mediaUrl) messageData.mediaUrl = mediaUrl;
+        if (mediaType) messageData.mediaType = mediaType;
+
+        await setDoc(msgRef, messageData);
       }
 
       // Update or create chat metadata
@@ -1086,18 +1127,6 @@ async function startServer() {
       }
 
       await setDoc(chatRef, chatUpdateData, { merge: true });
-
-      // Add message to subcollection
-      const messageData: any = {
-        text,
-        sender: 'user',
-        timestamp: serverTimestamp()
-      };
-      if (messageId) messageData.externalId = messageId;
-      if (mediaUrl) messageData.mediaUrl = mediaUrl;
-      if (mediaType) messageData.mediaType = mediaType;
-
-      await setDoc(msgRef, messageData);
 
       await updateStats(platform, chatId);
       console.log(`Message saved from ${platform} user ${username}`);
@@ -1185,23 +1214,22 @@ async function startServer() {
           try {
             const vkApi = vk || new VK({ token: tokens.vk });
             
-            // Check if it's already a VK attachment string (e.g., photo123_456, video123_456)
+            // Check if it's already a VK attachment string or a URL containing one
+            const vkPhotoMatch = mediaUrl.match(/photo(-?\d+_\d+)/);
+            const vkVideoMatch = mediaUrl.match(/video(-?\d+_\d+)/);
+            const vkWallMatch = mediaUrl.match(/wall(-?\d+_\d+)/);
+            const vkDocMatch = mediaUrl.match(/doc(-?\d+_\d+)/);
+
             if (mediaUrl.match(/^(photo|video|audio|doc|wall|market)-?\d+_\d+/)) {
               attachment = mediaUrl;
-            } else if (mediaUrl.includes('vk.com/video')) {
-              const match = mediaUrl.match(/video(-?\d+_\d+)/);
-              if (match) {
-                attachment = `video${match[1]}`;
-              } else {
-                messageText += `\n\n${mediaUrl}`;
-              }
-            } else if (mediaUrl.includes('vk.com/photo')) {
-              const match = mediaUrl.match(/photo(-?\d+_\d+)/);
-              if (match) {
-                attachment = `photo${match[1]}`;
-              } else {
-                messageText += `\n\n${mediaUrl}`;
-              }
+            } else if (vkPhotoMatch) {
+              attachment = `photo${vkPhotoMatch[1]}`;
+            } else if (vkVideoMatch) {
+              attachment = `video${vkVideoMatch[1]}`;
+            } else if (vkWallMatch) {
+              attachment = `wall${vkWallMatch[1]}`;
+            } else if (vkDocMatch) {
+              attachment = `doc${vkDocMatch[1]}`;
             } else {
               let sourceData: any = { value: mediaUrl };
               
@@ -1407,14 +1435,14 @@ async function startServer() {
       const userDocSnap = await getDoc(userDocRef);
       const tokens = userDocSnap.data();
 
-      if (!tokens || !tokens.botToken || !tokens.chatId) {
+      if (!tokens || !tokens.notificationBotToken || !tokens.notificationChatId) {
         return res.status(400).json({ error: 'Notification bot not configured' });
       }
 
-      await axios.post(`https://api.telegram.org/bot${tokens.botToken}/sendMessage`, {
-        chat_id: tokens.chatId,
+      await axios.post(`https://api.telegram.org/bot${tokens.notificationBotToken}/sendMessage`, {
+        chat_id: tokens.notificationChatId,
         text: text,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
 
       res.json({ success: true });
@@ -1479,7 +1507,7 @@ async function startServer() {
 
   // VK Callback API handler
   app.all('/api/vk/callback', async (req, res) => {
-    if (vkPollingStarted && req.method === 'POST') {
+    if (!process.env.VERCEL && vkPollingStarted && req.method === 'POST') {
       return res.send('ok');
     }
     console.log(`VK Callback received: ${req.method} request`);
@@ -1690,7 +1718,7 @@ async function startServer() {
 
   // VK Webhook
   app.post('/api/webhook/vk', async (req, res) => {
-    if (vkPollingStarted) {
+    if (!process.env.VERCEL && vkPollingStarted) {
       return res.send('ok');
     }
     const { type, object, group_id, secret } = req.body;
@@ -1859,8 +1887,9 @@ async function startServer() {
         const data = doc.data();
         const platform = data.platform as 'wb' | 'ozon' || 'wb';
         
-        // We count all orders (or we could filter by status !== 'cancelled')
-        // The user asked for "how many were sold", usually we count all ordered.
+        // Exclude cancelled orders
+        if (data.status === 'cancelled') return;
+        
         stats.total.all++;
         stats.total[platform]++;
         
@@ -2030,9 +2059,12 @@ async function startServer() {
         // Get tokens from products as well
         const productsSnapshot = await getDocs(collection(db, 'users', userDoc.id, 'products'));
         const productTokens = new Set<string>();
+        const existingArticles = new Set<string>();
+        
         productsSnapshot.forEach(doc => {
           const data = doc.data();
           if (data.apiWb) productTokens.add(data.apiWb);
+          if (data.article) existingArticles.add(data.article);
         });
         
         const allWbTokens = new Set<string>();
@@ -2057,6 +2089,9 @@ async function startServer() {
                   const batch = writeBatch(db);
                   let count = 0;
                   
+                  const newProductsBatch = writeBatch(db);
+                  let newProductsCount = 0;
+                  
                   for (const order of orders) {
                     const orderId = order.srid;
                     const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
@@ -2076,9 +2111,32 @@ async function startServer() {
                       await batch.commit();
                       count = 0;
                     }
+                    
+                    // Add missing products
+                    if (order.supplierArticle && !existingArticles.has(order.supplierArticle)) {
+                      existingArticles.add(order.supplierArticle);
+                      const newProductRef = doc(collection(db, 'users', userDoc.id, 'products'));
+                      newProductsBatch.set(newProductRef, {
+                        name: order.subject || order.supplierArticle,
+                        article: order.supplierArticle,
+                        marketplace: 'wb',
+                        costPrice: 0,
+                        salesPercent: 0,
+                        imageUrl: '',
+                        createdAt: serverTimestamp()
+                      });
+                      newProductsCount++;
+                      if (newProductsCount === 400) {
+                        await newProductsBatch.commit();
+                        newProductsCount = 0;
+                      }
+                    }
                   }
                   if (count > 0) {
                     await batch.commit();
+                  }
+                  if (newProductsCount > 0) {
+                    await newProductsBatch.commit();
                   }
                   console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
                 }
@@ -2104,13 +2162,75 @@ async function startServer() {
     }
   };
 
-  // Run WB fetcher shortly after startup
-  setTimeout(() => fetchWbOrders(3000), 10000);
+  // Run WB fetcher shortly after startup (recent)
+  setTimeout(() => fetchWbOrders(2), 10000);
   
-  // Every 30 minutes fetch all-time
-  cron.schedule('*/30 * * * *', () => {
-    console.log('Running 30-min WB fetch (all time)');
+  // Every 2 minutes fetch recent orders (last 2 days)
+  cron.schedule('*/2 * * * *', () => {
+    console.log('Running 2-min WB fetch (recent)');
+    fetchWbOrders(2);
+  });
+
+  // Every night at 02:00 MSK (23:00 UTC) fetch all-time
+  cron.schedule('0 23 * * *', () => {
+    console.log('Running nightly WB fetch (all time)');
     fetchWbOrders(3000);
+  });
+
+  // Weekly 7-day WB/Ozon stats at 00:00 MSK on Monday (21:00 UTC on Sunday)
+  cron.schedule('0 21 * * 0', async () => {
+    console.log('Running weekly 7-day WB/Ozon stats sender');
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      for (const userDoc of usersSnapshot.docs) {
+        const userId = userDoc.id;
+        try {
+          // Check if user has notification bot configured
+          const tokensDoc = await getDoc(doc(db, 'users', userId, 'settings', 'tokens'));
+          const tokens = tokensDoc.data();
+          if (!tokens || !tokens.notificationBotToken || !tokens.notificationChatId) continue;
+
+          // Get stats dashboard data
+          const statsDoc = await getDoc(doc(db, 'users', userId, 'stats', 'dashboard'));
+          const statsData = statsDoc.data();
+          if (!statsData || !statsData.chartData || statsData.chartData.length === 0) continue;
+
+          const wbChartData = statsData.chartData;
+          let totalWb = 0;
+          let totalOzon = 0;
+          
+          wbChartData.forEach((day: any) => {
+            totalWb += day.wb || 0;
+            totalOzon += day.ozon || 0;
+          });
+          
+          const startDate = wbChartData[0].name;
+          const endDate = wbChartData[wbChartData.length - 1].name;
+          
+          let message = `📦 *Заказы за последние 7 дней (${startDate} - ${endDate})*\n\n`;
+          message += `🟣 Wildberries: ${totalWb} шт.\n`;
+          message += `🔵 Ozon: ${totalOzon} шт.\n\n`;
+          message += `Всего заказов: ${totalWb + totalOzon} шт.`;
+
+          await axios.post(`https://api.telegram.org/bot${tokens.notificationBotToken}/sendMessage`, {
+            chat_id: tokens.notificationChatId,
+            text: message,
+            parse_mode: 'HTML'
+          });
+          console.log(`Sent weekly WB stats to user ${userId}`);
+        } catch (err: any) {
+          console.error(`Error sending weekly WB stats to user ${userId}:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error('Error in weekly WB stats sender:', err);
+    }
+  });
+
+  // Daily server restart at 03:00 MSK (00:00 UTC)
+  cron.schedule('0 0 * * *', () => {
+    console.log('Daily server restart at 03:00 MSK');
+    process.exit(0); // PM2 or Docker will restart the process
   });
 
   // --- Scheduler Loop ---
@@ -2147,7 +2267,7 @@ async function startServer() {
           await axios.post(`https://api.telegram.org/bot${tokens.notificationBotToken}/sendMessage`, {
             chat_id: tokens.notificationChatId,
             text: text,
-            parse_mode: 'Markdown'
+            parse_mode: 'HTML'
           });
           
           await updateDoc(doc(db, 'scheduled_notifications', docSnap.id), {
