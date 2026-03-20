@@ -226,7 +226,29 @@ export default function Products() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Total Sales */}
+        <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden group">
+          <div className="z-10">
+            <div className="text-gray-400 text-sm mb-1">Продаж в сумме:</div>
+            <div className="text-2xl font-bold text-white">{stats.total}</div>
+          </div>
+          <div className="bg-[#2a2a2a] p-3 rounded-xl text-gray-400">
+            <Package size={24} />
+          </div>
+        </div>
+
+        {/* WB Sales */}
+        <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
+          <div className="z-10">
+            <div className="text-gray-400 text-sm mb-1">Продаж Wildberries:</div>
+            <div className="text-2xl font-bold text-white">{stats.wb}</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-600 to-fuchsia-600 p-3 rounded-xl text-white font-bold text-lg w-12 h-12 flex items-center justify-center">
+            WB
+          </div>
+        </div>
+
         {/* Ozon Sales */}
         <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
           <div className="z-10">
@@ -312,6 +334,13 @@ export default function Products() {
                   {product.apiOzon && (
                     <div className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/30" title="Ozon API подключен">O</div>
                   )}
+                </div>
+              </div>
+              
+              <div className="flex items-end gap-2">
+                <div>
+                  <div className="text-gray-500 text-sm">Продажи:</div>
+                  <div className="text-2xl font-bold text-white">{product.salesPercent || 0} шт</div>
                 </div>
               </div>
             </div>

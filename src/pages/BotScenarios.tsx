@@ -679,11 +679,11 @@ export default function BotScenarios() {
                       type="text" 
                       value={selectedNode.data.mediaUrl as string || ''} 
                       onChange={(e) => updateNodeData('mediaUrl', e.target.value)}
-                      placeholder="https://vk.com/photo-123_456, https://vk.com/video-123_456 или URL"
+                      placeholder="https://vk.com/photo-123_456 или URL картинки"
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">
-                      Поддерживаются прямые ссылки на картинки, ссылки на посты Telegram, а также ссылки на фото, видео и посты ВКонтакте (например: https://vk.com/photo-123_456, https://vk.com/video-123_456, https://vk.com/wall-123_456).
+                      Поддерживаются прямые ссылки на картинки, ссылки на посты Telegram, а также ссылки на фото/видео ВКонтакте (например: https://vk.com/photo-123_456).
                     </p>
                   </div>
 

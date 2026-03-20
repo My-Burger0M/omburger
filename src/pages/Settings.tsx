@@ -435,37 +435,15 @@ export default function Settings() {
           <label htmlFor="wbToken" className="block text-sm font-medium text-gray-300">
             Wildberries API Токен
           </label>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              id="wbToken"
-              value={wbToken}
-              onChange={(e) => setWbToken(e.target.value)}
-              placeholder="Введите токен WB..."
-              className="flex-1 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            />
-            <button
-              onClick={async () => {
-                if (!currentUser) return;
-                if (!confirm('Вы уверены, что хотите очистить токен и все данные Wildberries (заказы, статистику)?')) return;
-                try {
-                  await axios.post('/api/wb/clear', { userId: currentUser.uid });
-                  setWbToken('');
-                  alert('Токен и данные Wildberries успешно очищены!');
-                  checkBotStatus();
-                } catch (err) {
-                  console.error(err);
-                  alert('Ошибка при очистке данных WB');
-                }
-              }}
-              className="px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-xl transition-colors whitespace-nowrap"
-            >
-              Очистить данные
-            </button>
-          </div>
-          <p className="text-xs text-gray-500">
-            Для нового токена Wildberries нужны права: <strong>Контент</strong> (для работы с товарами) и <strong>Статистика</strong> (для получения данных о заказах).
-          </p>
+          <input
+            type="password"
+            id="wbToken"
+            value={wbToken}
+            onChange={(e) => setWbToken(e.target.value)}
+            placeholder="Введите токен WB..."
+            className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+          />
+          <p className="text-xs text-gray-500">Используется для получения статистики по заказам с Wildberries.</p>
         </div>
 
         {/* Ozon Token */}

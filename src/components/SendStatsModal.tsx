@@ -35,17 +35,21 @@ export default function SendStatsModal({ isOpen, onClose, statsData, wbChartData
   const prepareMessage = () => {
     let message = '';
     if (selectedDate === 'wb7days') {
+      let totalWb = 0;
       let totalOzon = 0;
       
       wbChartData.forEach(day => {
+        totalWb += day.wb;
         totalOzon += day.ozon;
       });
       
       const startDate = wbChartData.length > 0 ? wbChartData[0].name : '';
       const endDate = wbChartData.length > 0 ? wbChartData[wbChartData.length - 1].name : '';
       
-      message = `📦 *Заказы за текущую неделю (${startDate} - ${endDate})*\n\n`;
-      message += `🔵 Ozon: ${totalOzon} шт.`;
+      message = `📦 *Заказы за последние 7 дней (${startDate} - ${endDate})*\n\n`;
+      message += `🟣 Wildberries: ${totalWb} шт.\n`;
+      message += `🔵 Ozon: ${totalOzon} шт.\n\n`;
+      message += `Всего заказов: ${totalWb + totalOzon} шт.`;
     } else if (selectedDate === 'month') {
         const monthName = format(currentDate, 'LLLL yyyy', { locale: ru });
         
@@ -195,7 +199,7 @@ export default function SendStatsModal({ isOpen, onClose, statsData, wbChartData
                 }`}
               >
                 <Calendar className="w-6 h-6" />
-                <span className="text-sm font-medium text-center">Заказы за текущую неделю</span>
+                <span className="text-sm font-medium text-center">Заказы за 7 дней</span>
               </button>
 
               <div className="relative col-span-2 mt-2">
