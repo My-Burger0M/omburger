@@ -213,6 +213,37 @@ export default function Dashboard() {
   const ordersToday = marketplaceOrders.filter(o => getMskDateString(o.date) === todayStr);
   const ordersThisMonth = marketplaceOrders.filter(o => getMskDateString(o.date) >= monthStartStr);
 
+  // Calculate current week data (Monday to Sunday)
+  const currentWeekData = React.useMemo(() => {
+    const today = new Date();
+    const msk = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+    
+    // Get Monday of current week
+    const day = msk.getDay();
+    const diff = msk.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    const monday = new Date(msk.setDate(diff));
+    
+    const weekData = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = format(d, 'yyyy-MM-dd');
+      const displayDate = format(d, 'dd.MM');
+      
+      const dayOrders = marketplaceOrders.filter(o => getMskDateString(o.date) === dateStr);
+      const wb = dayOrders.filter(o => o.platform === 'wb').length;
+      const ozon = dayOrders.filter(o => o.platform === 'ozon').length;
+      
+      weekData.push({
+        name: displayDate,
+        dateStr,
+        wb,
+        ozon
+      });
+    }
+    return weekData;
+  }, [marketplaceOrders]);
+
   const openMarketplaceModal = (title: string, orders: any[]) => {
     setMarketplaceModalTitle(title);
     setMarketplaceModalOrders(orders);
@@ -223,11 +254,8 @@ export default function Dashboard() {
     if (!currentUser) return;
     setIsSendingToTg(true);
     try {
-      const total = day.wb + day.ozon;
       let message = `📦 *Заказы за ${day.name} (${dayOfWeek})*\n\n`;
-      message += `🟣 Wildberries: ${day.wb} шт.\n`;
-      message += `🔵 Ozon: ${day.ozon} шт.\n\n`;
-      message += `Всего заказов: ${total} шт.`;
+      message += `🔵 Ozon: ${day.ozon} шт.`;
 
       await axios.post('/api/notifications/send', {
         userId: currentUser.uid,
@@ -243,35 +271,30 @@ export default function Dashboard() {
   };
 
   const sendToTelegramAllDays = async () => {
-    if (!currentUser || wbChartData.length === 0) return;
+    if (!currentUser || currentWeekData.length === 0) return;
     setIsSendingToTg(true);
     try {
-      const startDate = wbChartData[0].name;
-      const endDate = wbChartData[wbChartData.length - 1].name;
+      const startDate = currentWeekData[0].name;
+      const endDate = currentWeekData[currentWeekData.length - 1].name;
       
-      let message = `📦 *Детализация заказов за 7 дней (${startDate} - ${endDate})*\n\n`;
+      let message = `📦 *Детализация заказов за текущую неделю (${startDate} - ${endDate})*\n\n`;
       
-      let totalWb = 0;
       let totalOzon = 0;
 
-      wbChartData.forEach(day => {
+      currentWeekData.forEach(day => {
         const dateParts = day.name.split('.');
         const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
         const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
         const dayOfWeek = daysOfWeek[dateObj.getDay()];
         
-        const total = day.wb + day.ozon;
-        totalWb += day.wb;
         totalOzon += day.ozon;
         
         message += `📅 *${day.name} (${dayOfWeek})*\n`;
-        message += `🟣 WB: ${day.wb} | 🔵 Ozon: ${day.ozon} | Всего: ${total}\n\n`;
+        message += `🔵 Ozon: ${day.ozon}\n\n`;
       });
 
       message += `📊 *Итого за период:*\n`;
-      message += `🟣 Wildberries: ${totalWb} шт.\n`;
-      message += `🔵 Ozon: ${totalOzon} шт.\n`;
-      message += `Всего заказов: ${totalWb + totalOzon} шт.`;
+      message += `🔵 Ozon: ${totalOzon} шт.`;
 
       await axios.post('/api/notifications/send', {
         userId: currentUser.uid,
@@ -454,10 +477,10 @@ export default function Dashboard() {
       {/* 7-Day Orders Table */}
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 flex flex-col">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Детализация заказов за 7 дней</h2>
+          <h2 className="text-xl font-bold">Детализация заказов за текущую неделю</h2>
           <button
             onClick={sendToTelegramAllDays}
-            disabled={isSendingToTg || wbChartData.length === 0}
+            disabled={isSendingToTg || currentWeekData.length === 0}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
           >
             {isSendingToTg ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -470,27 +493,22 @@ export default function Dashboard() {
               <tr className="border-b border-white/10 text-gray-400 text-sm uppercase">
                 <th className="py-3 px-4 font-medium">Дата</th>
                 <th className="py-3 px-4 font-medium">День недели</th>
-                <th className="py-3 px-4 font-medium">Wildberries</th>
                 <th className="py-3 px-4 font-medium">Ozon</th>
-                <th className="py-3 px-4 font-medium">Всего</th>
                 <th className="py-3 px-4 font-medium text-right">Действие</th>
               </tr>
             </thead>
             <tbody>
-              {wbChartData.map((day, index) => {
+              {currentWeekData.map((day, index) => {
                 const dateParts = day.name.split('.');
                 const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
                 const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
                 const dayOfWeek = daysOfWeek[dateObj.getDay()];
-                const total = day.wb + day.ozon;
                 
                 return (
                   <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="py-3 px-4">{day.name}</td>
                     <td className="py-3 px-4">{dayOfWeek}</td>
-                    <td className="py-3 px-4 text-purple-400">{day.wb} шт</td>
                     <td className="py-3 px-4 text-blue-400">{day.ozon} шт</td>
-                    <td className="py-3 px-4 font-bold">{total} шт</td>
                     <td className="py-3 px-4 text-right">
                       <button
                         onClick={() => sendToTelegramSingleDay(day, dayOfWeek)}
@@ -504,10 +522,10 @@ export default function Dashboard() {
                   </tr>
                 );
               })}
-              {wbChartData.length === 0 && (
+              {currentWeekData.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500">
-                    Нет данных за последние 7 дней
+                  <td colSpan={4} className="py-8 text-center text-gray-500">
+                    Нет данных за текущую неделю
                   </td>
                 </tr>
               )}
@@ -517,13 +535,9 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <BottomCard imageKey="bot1" title="Заказы за сегодня" value={todayStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
-        <BottomCard imageKey="bot4" title="Заказы за месяц" value={monthStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за месяц', ordersThisMonth)} />
+      <div className="grid grid-cols-2 gap-4">
         <BottomCard imageKey="bot3" title="Сегодня Ozon" value={todayStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Ozon', ordersToday.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={todayStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
         <BottomCard imageKey="bot6" title="За месяц Ozon" value={monthStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Ozon', ordersThisMonth.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={monthStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
       </div>
 
       {selectedPlatform && (
@@ -538,7 +552,7 @@ export default function Dashboard() {
         isOpen={isSendModalOpen}
         onClose={() => setIsSendModalOpen(false)}
         statsData={statsData}
-        wbChartData={wbChartData}
+        wbChartData={currentWeekData}
         currentDate={currentDate}
       />
 

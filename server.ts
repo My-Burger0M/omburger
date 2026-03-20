@@ -248,6 +248,17 @@ async function startServer() {
       const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
       
       const saved = await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
+      
+      // Reply with welcome message and WebApp button
+      const appUrl = process.env.APP_URL || 'https://ais-pre-rvjuwxyv5yteoncwfp5vjs-332171112512.europe-west2.run.app';
+      await ctx.reply('Добро пожаловать в MaxMarket', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Перейти в приложение', web_app: { url: appUrl } }]
+          ]
+        }
+      });
+
       if (saved && userId) {
         await processScenario('tg', chatId, '/start', payload, userId);
       }
