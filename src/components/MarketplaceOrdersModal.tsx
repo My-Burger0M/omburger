@@ -157,7 +157,13 @@ export default function MarketplaceOrdersModal({ isOpen, onClose, title, orders,
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-emerald-400">{order.price} ₽</div>
-                    <div className="text-xs text-gray-400 mt-1">{order.status === 'cancelled' ? 'Отменен' : 'Заказан'}</div>
+                    <div className="text-xs mt-1 font-medium">
+                      {order.status === 'cancelled' && <span className="text-red-400">Отменен</span>}
+                      {order.status === 'ordered' && <span className="text-blue-400">Заказан</span>}
+                      {order.status === 'completed' && <span className="text-emerald-400">Выкуплен</span>}
+                      {order.status === 'returned' && <span className="text-orange-400">Возврат</span>}
+                      {!['cancelled', 'ordered', 'completed', 'returned'].includes(order.status) && <span className="text-gray-400">{order.status}</span>}
+                    </div>
                   </div>
                 </div>
               ))}

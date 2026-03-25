@@ -21,7 +21,7 @@ const botsItems: MenuItem[] = [
 
 const automationItems: MenuItem[] = [
   { id: 'calendar', path: '/calendar', label: 'Календарь событий' },
-  { id: 'knowledge-base', path: '/knowledge-base', label: 'База знаний' },
+  { id: 'quick-replies', path: '/quick-replies', label: 'Быстрые ответы' },
 ];
 
 const defaultIcons: Record<string, React.ReactNode> = {
@@ -35,7 +35,7 @@ const defaultIcons: Record<string, React.ReactNode> = {
   crm: <Users size={20} />,
   calendar: <Calendar size={20} />,
   teams: <UsersRound size={20} />,
-  'knowledge-base': <BookOpen size={20} />,
+  'quick-replies': <BookOpen size={20} />,
   settings: <SettingsIcon size={20} />,
 };
 

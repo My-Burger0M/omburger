@@ -21,7 +21,7 @@ import {
   useEdges
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Save, Play, Plus, Trash2, Settings, MessageSquare, Tag, Zap, Link as LinkIcon, Image as ImageIcon, Clock, Power, AlertCircle, Maximize, Minimize, CheckCircle2 } from 'lucide-react';
+import { Save, Play, Plus, Trash2, Settings, MessageSquare, Tag, Zap, Link as LinkIcon, Image as ImageIcon, Clock, Power, AlertCircle, Maximize, Minimize, CheckCircle2, Video, FileText } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
@@ -123,11 +123,44 @@ const MessageNode = ({ id, data }: { id: string, data: any }) => {
       </div>
       <div className="p-3 text-xs text-gray-400 flex flex-col gap-2">
         {data.mediaUrl && (
-          <div className="h-16 bg-[#222] rounded flex items-center justify-center border border-white/5 overflow-hidden">
-            {data.mediaUrl.match(/\.(jpeg|jpg|gif|png)$/) != null ? (
-              <img src={data.mediaUrl} alt="media" className="w-full h-full object-cover opacity-70" />
+          <div className="h-24 bg-[#222] rounded flex items-center justify-center border border-white/5 overflow-hidden relative group">
+            {/\.(mp4|webm|ogg|mov)$/i.test(data.mediaUrl) ? (
+              <video src={data.mediaUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" muted loop playsInline autoPlay />
+            ) : /\.(jpeg|jpg|gif|png|webp)$/i.test(data.mediaUrl) || (data.mediaUrl.startsWith('http') && !data.mediaUrl.includes('vk.com')) ? (
+              <>
+                <img 
+                  src={data.mediaUrl} 
+                  alt="media" 
+                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity absolute inset-0 z-10" 
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }} 
+                />
+                <div className="flex flex-col items-center gap-1 text-gray-500 z-0">
+                  <ImageIcon size={20} />
+                  <span className="text-[10px]">Медиа</span>
+                </div>
+              </>
+            ) : data.mediaUrl.includes('video') ? (
+              <div className="flex flex-col items-center gap-1 text-gray-500">
+                <Video size={20} />
+                <span className="text-[10px]">VK Видео</span>
+              </div>
+            ) : data.mediaUrl.includes('doc') ? (
+              <div className="flex flex-col items-center gap-1 text-gray-500">
+                <FileText size={20} />
+                <span className="text-[10px]">VK Документ</span>
+              </div>
+            ) : data.mediaUrl.includes('photo') ? (
+              <div className="flex flex-col items-center gap-1 text-gray-500">
+                <ImageIcon size={20} />
+                <span className="text-[10px]">VK Фото</span>
+              </div>
             ) : (
-              <ImageIcon size={16} className="text-gray-500" />
+              <div className="flex flex-col items-center gap-1 text-gray-500">
+                <ImageIcon size={20} />
+                <span className="text-[10px]">Медиа</span>
+              </div>
             )}
           </div>
         )}
@@ -679,11 +712,11 @@ export default function BotScenarios() {
                       type="text" 
                       value={selectedNode.data.mediaUrl as string || ''} 
                       onChange={(e) => updateNodeData('mediaUrl', e.target.value)}
-                      placeholder="https://vk.com/photo-123_456 или URL картинки"
+                      placeholder="https://vk.com/photo-123_456, https://vk.com/video-123_456 или URL"
                       className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
                     />
                     <p className="text-[10px] text-gray-500 mt-1">
-                      Поддерживаются прямые ссылки на картинки, ссылки на посты Telegram, а также ссылки на фото/видео ВКонтакте (например: https://vk.com/photo-123_456).
+                      Поддерживаются прямые ссылки на картинки, ссылки на посты Telegram, а также ссылки на фото, видео и посты ВКонтакте (например: https://vk.com/photo-123_456, https://vk.com/video-123_456, https://vk.com/wall-123_456).
                     </p>
                   </div>
 

@@ -212,12 +212,15 @@ async function startServer() {
       const saved = await saveMessage('vk', chatId, `(${buttonText})`, username, eventId);
       
       try {
-        await vk!.api.messages.sendMessageEventAnswer({
-          event_id: context.eventId,
-          user_id: context.userId,
-          peer_id: context.peerId,
-          event_data: JSON.stringify({ type: 'show_snackbar', text: '✅' })
-        });
+        if (typeof context.answer === 'function') {
+          await context.answer({ type: 'show_snackbar', text: '✅' });
+        } else {
+          await vk!.api.messages.sendMessageEventAnswer({
+            event_id: context.eventId,
+            user_id: context.userId,
+            peer_id: context.peerId
+          });
+        }
       } catch (e) {
         console.error('Error answering VK message_event:', e);
       }
@@ -248,17 +251,6 @@ async function startServer() {
       const displayName = [firstName, lastName].filter(Boolean).join(' ') || tgUsername || `User ${chatId}`;
       
       const saved = await saveMessage('tg', chatId, '/start', displayName, ctx.message.message_id.toString());
-      
-      // Reply with welcome message and WebApp button
-      const appUrl = process.env.APP_URL || 'https://ais-pre-rvjuwxyv5yteoncwfp5vjs-332171112512.europe-west2.run.app';
-      await ctx.reply('Добро пожаловать в MaxMarket', {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: 'Перейти в приложение', web_app: { url: appUrl } }]
-          ]
-        }
-      });
-
       if (saved && userId) {
         await processScenario('tg', chatId, '/start', payload, userId);
       }
@@ -1302,7 +1294,7 @@ async function startServer() {
               }
               const cmd = btn.callback_data || btn.id || `btn_${i}_${j}`;
               return { 
-                action: { type: 'callback', label: btn.text, payload: JSON.stringify({ cmd }) },
+                action: { type: 'text', label: btn.text, payload: JSON.stringify({ cmd }) },
                 color: btnColor
               };
             })
@@ -1879,34 +1871,48 @@ async function startServer() {
       const articleCounts: Record<string, number> = {};
       
       const now = new Date();
-      // Use UTC+3 (MSK) for date string matching
-      const getMskDateStr = (d: Date) => {
-        const mskDate = new Date(d.getTime() + 3 * 60 * 60 * 1000);
-        return mskDate.toISOString().split('T')[0];
-      };
+      const mskTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
       
-      const todayStr = getMskDateStr(now);
+      const todayStr = mskTime.getFullYear() + '-' + String(mskTime.getMonth() + 1).padStart(2, '0') + '-' + String(mskTime.getDate()).padStart(2, '0');
       const monthStr = todayStr.substring(0, 7);
       
       const last7DaysMap: Record<string, { wb: number, ozon: number }> = {};
       for (let i = 6; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-        last7DaysMap[getMskDateStr(d)] = { wb: 0, ozon: 0 };
+        const d = new Date(mskTime.getTime() - i * 24 * 60 * 60 * 1000);
+        const dStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        last7DaysMap[dStr] = { wb: 0, ozon: 0 };
+      }
+
+      const monthDaysMap: Record<string, { wb: number, ozon: number }> = {};
+      const daysInMonth = new Date(mskTime.getFullYear(), mskTime.getMonth() + 1, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dStr = monthStr + '-' + String(i).padStart(2, '0');
+        monthDaysMap[dStr] = { wb: 0, ozon: 0 };
       }
 
       ordersSnapshot.forEach(doc => {
         const data = doc.data();
         const platform = data.platform as 'wb' | 'ozon' || 'wb';
         
-        // Exclude cancelled orders
-        if (data.status === 'cancelled') return;
+        // Include cancelled orders to match raw order counts on WB dashboard
+        // if (data.status === 'cancelled') return;
         
         stats.total.all++;
         stats.total[platform]++;
         
         if (data.date) {
-          const orderDate = new Date(data.date);
-          const dateOnly = getMskDateStr(orderDate);
+          let dateOnly = '';
+          if (typeof data.date === 'string') {
+            if (data.date.endsWith('Z') || data.date.includes('+')) {
+              // Parse as UTC and convert to MSK
+              const d = new Date(data.date);
+              const dMsk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+              dateOnly = dMsk.getFullYear() + '-' + String(dMsk.getMonth() + 1).padStart(2, '0') + '-' + String(dMsk.getDate()).padStart(2, '0');
+            } else {
+              // WB API returns MSK without timezone info
+              dateOnly = data.date.substring(0, 10);
+            }
+          }
           
           if (dateOnly === todayStr) {
             stats.today.all++;
@@ -1915,6 +1921,9 @@ async function startServer() {
           if (dateOnly.startsWith(monthStr)) {
             stats.month.all++;
             stats.month[platform]++;
+            if (monthDaysMap[dateOnly]) {
+              monthDaysMap[dateOnly][platform]++;
+            }
           }
           
           if (last7DaysMap[dateOnly]) {
@@ -1929,13 +1938,22 @@ async function startServer() {
 
       const chartData = Object.keys(last7DaysMap).sort().map(date => ({
         name: date.split('-').slice(1).join('.'),
+        fullDate: date,
         wb: last7DaysMap[date].wb,
         ozon: last7DaysMap[date].ozon
+      }));
+
+      const monthChartData = Object.keys(monthDaysMap).sort().map(date => ({
+        name: date.split('-').slice(1).join('.'),
+        fullDate: date,
+        wb: monthDaysMap[date].wb,
+        ozon: monthDaysMap[date].ozon
       }));
 
       await setDoc(doc(db, 'users', userId, 'stats', 'dashboard'), {
         ...stats,
         chartData,
+        monthChartData,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -2087,7 +2105,7 @@ async function startServer() {
             const dateFrom = new Date();
             dateFrom.setDate(dateFrom.getDate() - daysBack);
             // Use proper format for WB API
-            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00' : dateFrom.toISOString().split('.')[0];
+            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00Z' : dateFrom.toISOString();
             
             for (const token of allWbTokens) {
               try {
@@ -2173,19 +2191,143 @@ async function startServer() {
     }
   };
 
+  // --- Ozon Orders Fetcher ---
+  const fetchOzonOrders = async (daysBack: number = 30) => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      for (const userDoc of usersSnapshot.docs) {
+        const tokens = userDoc.data().tokens || {};
+        
+        if (tokens.ozon && tokens.ozonClientId) {
+          try {
+            const dateFrom = new Date();
+            dateFrom.setDate(dateFrom.getDate() - Math.min(daysBack, 365));
+            const dateTo = new Date();
+            
+            const since = dateFrom.toISOString();
+            const to = dateTo.toISOString();
+            
+            const headers = {
+              'Client-Id': tokens.ozonClientId,
+              'Api-Key': tokens.ozon,
+              'Content-Type': 'application/json'
+            };
+
+            const existingArticles = new Set<string>();
+            const productsSnapshot = await getDocs(collection(db, 'users', userDoc.id, 'products'));
+            productsSnapshot.forEach(doc => existingArticles.add(doc.data().article));
+
+            const fetchList = async (url: string) => {
+              let offset = 0;
+              let allOrders: any[] = [];
+              while (true) {
+                const res = await axios.post(url, {
+                  dir: "ASC",
+                  filter: { since, to },
+                  limit: 1000,
+                  offset,
+                  with: { analytics_data: true, financial_data: true }
+                }, { headers });
+                
+                const result = res.data.result;
+                if (!result || result.length === 0) break;
+                allOrders = allOrders.concat(result);
+                if (result.length < 1000) break;
+                offset += 1000;
+              }
+              return allOrders;
+            };
+
+            const [fboOrders, fbsOrders] = await Promise.all([
+              fetchList('https://api-seller.ozon.ru/v2/posting/fbo/list').catch(() => []),
+              fetchList('https://api-seller.ozon.ru/v3/posting/fbs/list').catch(() => [])
+            ]);
+
+            const allOrders = [...fboOrders, ...fbsOrders];
+            
+            if (allOrders.length > 0) {
+              const batch = writeBatch(db);
+              let count = 0;
+              let newProductsBatch = writeBatch(db);
+              let newProductsCount = 0;
+
+              for (const order of allOrders) {
+                const orderId = order.posting_number;
+                const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `ozon_${orderId}`);
+                
+                // Extract product info from first product in order
+                const product = order.products && order.products[0] ? order.products[0] : null;
+                const article = product ? product.offer_id : 'unknown';
+                const productName = product ? product.name : 'Unknown Product';
+                const price = product ? parseFloat(product.price) : 0;
+                
+                batch.set(docRef, {
+                  platform: 'ozon',
+                  orderId: orderId,
+                  date: order.created_at || order.in_process_at,
+                  product: productName,
+                  article: article,
+                  price: price,
+                  status: order.status,
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+                
+                count++;
+                if (count === 400) {
+                  await batch.commit();
+                  count = 0;
+                }
+
+                if (article !== 'unknown' && !existingArticles.has(article)) {
+                  existingArticles.add(article);
+                  const newProductRef = doc(collection(db, 'users', userDoc.id, 'products'));
+                  newProductsBatch.set(newProductRef, {
+                    name: productName,
+                    article: article,
+                    price: price,
+                    cost: 0,
+                    createdAt: serverTimestamp()
+                  });
+                  newProductsCount++;
+                  if (newProductsCount === 400) {
+                    await newProductsBatch.commit();
+                    newProductsCount = 0;
+                    newProductsBatch = writeBatch(db);
+                  }
+                }
+              }
+              
+              if (count > 0) await batch.commit();
+              if (newProductsCount > 0) await newProductsBatch.commit();
+              
+              await aggregateUserStats(userDoc.id);
+            }
+          } catch (err: any) {
+            console.error(`Error in Ozon fetch loop for user ${userDoc.id}:`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error in fetchOzonOrders loop:', err);
+    }
+  };
+
   // Run WB fetcher shortly after startup (recent)
   setTimeout(() => fetchWbOrders(2), 10000);
+  setTimeout(() => fetchOzonOrders(2), 15000);
   
   // Every 2 minutes fetch recent orders (last 2 days)
   cron.schedule('*/2 * * * *', () => {
-    console.log('Running 2-min WB fetch (recent)');
+    console.log('Running 2-min WB/Ozon fetch (recent)');
     fetchWbOrders(2);
+    fetchOzonOrders(2);
   });
 
   // Every night at 02:00 MSK (23:00 UTC) fetch all-time
   cron.schedule('0 23 * * *', () => {
-    console.log('Running nightly WB fetch (all time)');
+    console.log('Running nightly WB/Ozon fetch (all time)');
     fetchWbOrders(3000);
+    fetchOzonOrders(365);
   });
 
   // Weekly 7-day WB/Ozon stats at 00:00 MSK on Monday (21:00 UTC on Sunday)

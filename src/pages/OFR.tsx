@@ -202,43 +202,44 @@ export default function OFR() {
       {activeTab === 'expenses' && (
         <div className="space-y-4">
           {expenseGroups.map(group => (
-            <div key={group.id} className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-4">
+            <div key={group.id} className="bg-[#1a1a1a] rounded-2xl border border-white/5 p-4 group hover:border-white/10 transition-colors">
               {editingGroupId === group.id && editingGroupData ? (
                 // Edit Mode
                 <div className="space-y-4">
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 items-center">
                     <input
                       type="text"
                       value={editingGroupData.title}
                       onChange={(e) => setEditingGroupData({...editingGroupData, title: e.target.value})}
-                      className="flex-1 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#a855f7]"
+                      className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       placeholder="Например Март 2026:"
                     />
-                    <div className="bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white flex items-center min-w-[200px]">
-                      Итого: {formatCurrency(calculateTotal(editingGroupData.items))}
+                    <div className="bg-[#2a2a2a] border border-white/5 rounded-xl px-6 py-4 flex items-center justify-center min-w-[200px]">
+                      <span className="text-gray-400 mr-2">Итого:</span>
+                      <span className="text-xl font-bold">{formatCurrency(calculateTotal(editingGroupData.items))}</span>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3 mt-6">
                     {editingGroupData.items.map(item => (
-                      <div key={item.id} className="flex gap-4 items-center">
+                      <div key={item.id} className="flex gap-3 items-center">
                         <input
                           type="text"
                           value={item.name}
                           onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
-                          className="flex-1 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#a855f7]"
+                          className="flex-[2] bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                           placeholder="Налог"
                         />
                         <input
                           type="text"
                           value={item.amount}
                           onChange={(e) => handleUpdateItem(item.id, 'amount', e.target.value)}
-                          className="w-48 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#a855f7]"
+                          className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                           placeholder="-30000"
                         />
                         <button
                           onClick={() => handleDeleteItem(item.id)}
-                          className="p-3 bg-red-500/20 text-red-500 hover:bg-red-500/30 rounded-xl transition-colors"
+                          className="bg-red-900/50 hover:bg-red-600 text-red-400 hover:text-white p-3 rounded-xl transition-colors flex-shrink-0"
                         >
                           <Trash2 size={20} />
                         </button>
@@ -246,13 +247,13 @@ export default function OFR() {
                     ))}
 
                     {/* Add new item row */}
-                    <div className="flex gap-4 items-center">
+                    <div className="flex gap-3 items-center">
                       <input
                         type="text"
                         value={newItemName}
                         onChange={(e) => setNewItemName(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAddItem()}
-                        className="flex-1 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#a855f7]"
+                        className="flex-[2] bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                         placeholder="Название расходника"
                       />
                       <input
@@ -260,62 +261,61 @@ export default function OFR() {
                         value={newItemAmount}
                         onChange={(e) => setNewItemAmount(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAddItem()}
-                        className="w-48 bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#a855f7]"
+                        className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                         placeholder="Цена"
                       />
                       <button
                         onClick={handleAddItem}
                         disabled={!newItemName.trim() || !newItemAmount.trim()}
-                        className="p-3 bg-green-500/20 text-green-500 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors"
+                        className="bg-green-700 hover:bg-green-600 text-white p-3 rounded-xl transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus size={20} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-4">
+                  <div className="flex justify-end gap-3 pt-4">
                     <button
                       onClick={cancelEditing}
-                      className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#333] text-white rounded-lg transition-colors flex items-center gap-2"
+                      className="px-6 py-3 bg-[#2a2a2a] hover:bg-[#333] text-white font-bold rounded-xl transition-colors flex items-center gap-2"
                     >
-                      <X size={16} /> Отмена
+                      <X size={20} /> Отмена
                     </button>
                     <button
                       onClick={saveEditing}
-                      className="px-4 py-2 bg-[#a855f7] hover:bg-[#9333ea] text-white rounded-lg transition-colors flex items-center gap-2"
+                      className="bg-white text-black font-bold px-6 py-3 rounded-xl hover:bg-gray-200 transition-colors flex items-center gap-2"
                     >
-                      <Save size={16} /> Сохранить
+                      <Save size={20} /> Сохранить
                     </button>
                   </div>
                 </div>
               ) : (
                 // View Mode
                 <div className="flex items-center justify-between">
-                  <span className="text-lg">{group.title}</span>
+                  <div className="text-lg font-medium pl-4">{group.title}</div>
                   <div className="flex items-center gap-4">
-                    <div className="bg-[#2a2a2a] px-4 py-2 rounded-lg text-gray-300">
-                      Всего: {formatCurrency(calculateTotal(group.items))}
+                    <div className="bg-[#2a2a2a] px-6 py-3 rounded-xl text-gray-300">
+                      Всего: <span className="font-bold text-white">{formatCurrency(calculateTotal(group.items))}</span>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => startEditing(group)}
-                        className="p-2 bg-[#2a2a2a] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg transition-colors"
-                      >
-                        <Edit2 size={20} />
-                      </button>
-                      <button
-                        onClick={() => handleCopyGroup(group)}
-                        className="p-2 bg-[#2a2a2a] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg transition-colors"
-                      >
-                        <Copy size={20} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteGroup(group.id)}
-                        className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={20} />
-                      </button>
-                    </div>
+                    
+                    <button
+                      onClick={() => startEditing(group)}
+                      className="bg-[#2a2a2a] hover:bg-[#333] p-3 rounded-xl transition-colors text-gray-400 hover:text-white"
+                    >
+                      <Edit2 size={20} />
+                    </button>
+                    <button
+                      onClick={() => handleCopyGroup(group)}
+                      className="bg-[#2a2a2a] hover:bg-[#333] p-3 rounded-xl transition-colors text-gray-400 hover:text-white"
+                    >
+                      <Copy size={20} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGroup(group.id)}
+                      className="bg-red-900/30 hover:bg-red-600 p-3 rounded-xl transition-colors text-red-400 hover:text-white"
+                    >
+                      <Trash2 size={20} />
+                    </button>
                   </div>
                 </div>
               )}
@@ -325,9 +325,9 @@ export default function OFR() {
           {!editingGroupId && (
             <button
               onClick={handleAddGroup}
-              className="w-full py-4 bg-[#2a2a2a] hover:bg-[#333] text-gray-400 hover:text-white rounded-2xl border border-white/5 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-[#1a1a1a] hover:bg-[#222] border border-white/5 rounded-2xl py-6 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
             >
-              Добавить
+              <span className="text-lg font-medium">Добавить</span>
             </button>
           )}
         </div>

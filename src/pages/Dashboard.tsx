@@ -34,6 +34,8 @@ export default function Dashboard() {
   const [todayStats, setTodayStats] = useState({ total: 0, wb: 0, ozon: 0 });
   const [monthStats, setMonthStats] = useState({ total: 0, wb: 0, ozon: 0 });
   const [wbChartData, setWbChartData] = useState<any[]>([]);
+  const [monthChartData, setMonthChartData] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'7days' | 'month'>('7days');
   
   const [marketplaceOrders, setMarketplaceOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -62,6 +64,9 @@ export default function Dashboard() {
         });
         if (data.chartData) {
           setWbChartData(data.chartData);
+        }
+        if (data.monthChartData) {
+          setMonthChartData(data.monthChartData);
         }
       }
     });
@@ -201,10 +206,18 @@ export default function Dashboard() {
 
   const getMskDateString = (dateString: string) => {
     try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return '';
-      const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
-      return format(msk, 'yyyy-MM-dd');
+      if (!dateString) return '';
+      let d: Date;
+      if (dateString.endsWith('Z') || dateString.includes('+')) {
+        // Parse as UTC and convert to MSK
+        d = new Date(dateString);
+        if (isNaN(d.getTime())) return '';
+        const msk = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Moscow"}));
+        return format(msk, 'yyyy-MM-dd');
+      } else {
+        // WB API returns MSK without timezone info
+        return dateString.substring(0, 10);
+      }
     } catch {
       return '';
     }
@@ -243,20 +256,25 @@ export default function Dashboard() {
   };
 
   const sendToTelegramAllDays = async () => {
-    if (!currentUser || wbChartData.length === 0) return;
+    if (!currentUser) return;
+    
+    const dataToUse = activeTab === '7days' ? wbChartData : monthChartData;
+    if (dataToUse.length === 0) return;
+
     setIsSendingToTg(true);
     try {
-      const startDate = wbChartData[0].name;
-      const endDate = wbChartData[wbChartData.length - 1].name;
+      const startDate = dataToUse[0].name;
+      const endDate = dataToUse[dataToUse.length - 1].name;
       
-      let message = `📦 *Детализация заказов за 7 дней (${startDate} - ${endDate})*\n\n`;
+      let message = `📦 *Детализация заказов за ${activeTab === '7days' ? '7 дней' : 'этот месяц'} (${startDate} - ${endDate})*\n\n`;
       
       let totalWb = 0;
       let totalOzon = 0;
 
-      wbChartData.forEach(day => {
-        const dateParts = day.name.split('.');
-        const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+      dataToUse.forEach(day => {
+        const dateStr = day.fullDate || new Date().getFullYear() + '-' + day.name.replace('.', '-');
+        const [year, month, d] = dateStr.split('-');
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(d));
         const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
         const dayOfWeek = daysOfWeek[dateObj.getDay()];
         
@@ -451,51 +469,122 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 7-Day Orders Table */}
+      {/* Orders Table */}
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 flex flex-col">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Детализация заказов за 7 дней</h2>
-          <button
-            onClick={sendToTelegramAllDays}
-            disabled={isSendingToTg || wbChartData.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-          >
-            {isSendingToTg ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Отправить все
-          </button>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <h2 className="text-xl font-bold">Детализация заказов</h2>
+          
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <div className="flex bg-[#2a2a2a] rounded-lg p-1 w-full sm:w-auto">
+              <button
+                onClick={() => setActiveTab('7days')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === '7days' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                7 дней
+              </button>
+              <button
+                onClick={() => setActiveTab('month')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'month' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Этот месяц
+              </button>
+            </div>
+            
+            <button
+              onClick={sendToTelegramAllDays}
+              disabled={isSendingToTg || (activeTab === '7days' ? wbChartData : monthChartData).length === 0}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors whitespace-nowrap shadow-sm"
+            >
+              {isSendingToTg ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Отправить отчет
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Summary Cards */}
+        {(activeTab === '7days' ? wbChartData : monthChartData).length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-[#2a2a2a] rounded-xl p-4 border border-white/5 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400 mb-1">Всего заказов</p>
+                <p className="text-2xl font-bold">
+                  {(activeTab === '7days' ? wbChartData : monthChartData).reduce((sum, day) => sum + day.wb + day.ozon, 0)}
+                </p>
+              </div>
+              <div className="bg-blue-500/20 p-3 rounded-lg">
+                <ShoppingBag className="w-6 h-6 text-blue-400" />
+              </div>
+            </div>
+            <div className="bg-[#2a2a2a] rounded-xl p-4 border border-purple-500/20 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-purple-400 mb-1">Wildberries</p>
+                <p className="text-2xl font-bold text-purple-400">
+                  {(activeTab === '7days' ? wbChartData : monthChartData).reduce((sum, day) => sum + day.wb, 0)}
+                </p>
+              </div>
+              <div className="bg-purple-500/20 p-3 rounded-lg">
+                <ShoppingBag className="w-6 h-6 text-purple-400" />
+              </div>
+            </div>
+            <div className="bg-[#2a2a2a] rounded-xl p-4 border border-blue-500/20 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-blue-400 mb-1">Ozon</p>
+                <p className="text-2xl font-bold text-blue-400">
+                  {(activeTab === '7days' ? wbChartData : monthChartData).reduce((sum, day) => sum + day.ozon, 0)}
+                </p>
+              </div>
+              <div className="bg-blue-500/20 p-3 rounded-lg">
+                <ShoppingBag className="w-6 h-6 text-blue-400" />
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="overflow-x-auto bg-[#2a2a2a] rounded-xl border border-white/5">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400 text-sm uppercase">
-                <th className="py-3 px-4 font-medium">Дата</th>
-                <th className="py-3 px-4 font-medium">День недели</th>
-                <th className="py-3 px-4 font-medium">Wildberries</th>
-                <th className="py-3 px-4 font-medium">Ozon</th>
-                <th className="py-3 px-4 font-medium">Всего</th>
-                <th className="py-3 px-4 font-medium text-right">Действие</th>
+              <tr className="border-b border-white/10 text-gray-400 text-xs uppercase tracking-wider bg-black/20">
+                <th className="py-4 px-6 font-medium">Дата</th>
+                <th className="py-4 px-6 font-medium">День недели</th>
+                <th className="py-4 px-6 font-medium">Wildberries</th>
+                <th className="py-4 px-6 font-medium">Ozon</th>
+                <th className="py-4 px-6 font-medium">Всего</th>
+                <th className="py-4 px-6 font-medium text-right">Действие</th>
               </tr>
             </thead>
-            <tbody>
-              {wbChartData.map((day, index) => {
-                const dateParts = day.name.split('.');
-                const dateObj = new Date(new Date().getFullYear(), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
+            <tbody className="divide-y divide-white/5">
+              {(activeTab === '7days' ? wbChartData : monthChartData).map((day, index) => {
+                const dateStr = day.fullDate || new Date().getFullYear() + '-' + day.name.replace('.', '-');
+                const [year, month, d] = dateStr.split('-');
+                const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(d));
                 const daysOfWeek = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
                 const dayOfWeek = daysOfWeek[dateObj.getDay()];
                 const total = day.wb + day.ozon;
                 
                 return (
-                  <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="py-3 px-4">{day.name}</td>
-                    <td className="py-3 px-4">{dayOfWeek}</td>
-                    <td className="py-3 px-4 text-purple-400">{day.wb} шт</td>
-                    <td className="py-3 px-4 text-blue-400">{day.ozon} шт</td>
-                    <td className="py-3 px-4 font-bold">{total} шт</td>
-                    <td className="py-3 px-4 text-right">
+                  <tr key={index} className="hover:bg-white/5 transition-colors group">
+                    <td className="py-4 px-6 font-medium">{day.name}</td>
+                    <td className="py-4 px-6 text-gray-400">{dayOfWeek}</td>
+                    <td className="py-4 px-6">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                        {day.wb} шт
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        {day.ozon} шт
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 font-bold text-white">{total} шт</td>
+                    <td className="py-4 px-6 text-right">
                       <button
                         onClick={() => sendToTelegramSingleDay(day, dayOfWeek)}
                         disabled={isSendingToTg}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg transition-colors inline-flex"
+                        className="p-2 bg-white/5 hover:bg-blue-600 disabled:opacity-50 text-gray-300 hover:text-white rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 inline-flex"
                         title="Отправить в Telegram"
                       >
                         <Send className="w-4 h-4" />
@@ -504,10 +593,13 @@ export default function Dashboard() {
                   </tr>
                 );
               })}
-              {wbChartData.length === 0 && (
+              {(activeTab === '7days' ? wbChartData : monthChartData).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500">
-                    Нет данных за последние 7 дней
+                  <td colSpan={6} className="py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <ShoppingBag className="w-8 h-8 opacity-20" />
+                      <p>Нет данных за выбранный период</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -519,11 +611,11 @@ export default function Dashboard() {
       {/* Bottom Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <BottomCard imageKey="bot1" title="Заказы за сегодня" value={todayStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за сегодня', ordersToday)} />
-        <BottomCard imageKey="bot4" title="Заказы за месяц" value={monthStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} onClick={() => openMarketplaceModal('Заказы за месяц', ordersThisMonth)} />
+        <BottomCard imageKey="bot4" title="Заказы за месяц" value={monthStats.total.toString()} unit="ед" icon={<Clock className="w-6 h-6" />} />
         <BottomCard imageKey="bot3" title="Сегодня Ozon" value={todayStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Ozon', ordersToday.filter(o => o.platform === 'ozon'))} />
         <BottomCard imageKey="bot2" title="Сегодня Wildberries" value={todayStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('Сегодня Wildberries', ordersToday.filter(o => o.platform === 'wb'))} />
-        <BottomCard imageKey="bot6" title="За месяц Ozon" value={monthStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Ozon', ordersThisMonth.filter(o => o.platform === 'ozon'))} />
-        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={monthStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} onClick={() => openMarketplaceModal('За месяц Wildberries', ordersThisMonth.filter(o => o.platform === 'wb'))} />
+        <BottomCard imageKey="bot6" title="За месяц Ozon" value={monthStats.ozon.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
+        <BottomCard imageKey="bot5" title="За месяц Wildberries" value={monthStats.wb.toString()} unit="ед" icon={<ShoppingBag className="w-6 h-6" />} />
       </div>
 
       {selectedPlatform && (
@@ -715,7 +807,7 @@ function BottomCard({ title, value, unit, icon, imageKey, onClick }: { title: st
   return (
     <div 
       onClick={onClick}
-      className={`bg-[#1a1a1a] rounded-2xl border border-purple-500/30 p-5 flex flex-col justify-between relative overflow-hidden transition-transform hover:scale-[1.02] ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-[#1a1a1a] rounded-2xl border border-purple-500/30 p-5 flex flex-col justify-between relative overflow-hidden ${onClick ? 'cursor-pointer transition-transform hover:scale-[1.02]' : ''}`}
     >
       <h3 className="text-sm text-gray-400 mb-4 pr-8 leading-tight">{title}</h3>
       <div className="flex items-baseline gap-1">

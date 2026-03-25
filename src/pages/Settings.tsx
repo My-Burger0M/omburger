@@ -12,6 +12,7 @@ export default function Settings() {
   const [vkToken, setVkToken] = useState('');
   const [vkSecret, setVkSecret] = useState('');
   const [ozonToken, setOzonToken] = useState('');
+  const [ozonClientId, setOzonClientId] = useState('');
   const [maxToken, setMaxToken] = useState('');
   
   // Notification Bot
@@ -45,6 +46,7 @@ export default function Settings() {
           setVkToken(t.vk || '');
           setVkSecret(t.vkSecret || '');
           setOzonToken(t.ozon || '');
+          setOzonClientId(t.ozonClientId || '');
           setMaxToken(t.max || '');
           setNotificationBotToken(t.notificationBotToken || '');
           setNotificationChatId(t.notificationChatId || '');
@@ -149,6 +151,7 @@ export default function Settings() {
           vk: vkToken,
           vkSecret: vkSecret,
           ozon: ozonToken,
+          ozonClientId: ozonClientId,
           max: maxToken,
           notificationBotToken,
           notificationChatId
@@ -448,15 +451,26 @@ export default function Settings() {
 
         {/* Ozon Token */}
         <div className="space-y-3">
-          <label htmlFor="ozonToken" className="block text-sm font-medium text-gray-300">
-            Ozon API Токен
+          <label htmlFor="ozonClientId" className="block text-sm font-medium text-gray-300">
+            Ozon Client ID
+          </label>
+          <input
+            type="text"
+            id="ozonClientId"
+            value={ozonClientId}
+            onChange={(e) => setOzonClientId(e.target.value)}
+            placeholder="Введите Client ID Ozon..."
+            className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all"
+          />
+          <label htmlFor="ozonToken" className="block text-sm font-medium text-gray-300 mt-4">
+            Ozon API Key
           </label>
           <input
             type="password"
             id="ozonToken"
             value={ozonToken}
             onChange={(e) => setOzonToken(e.target.value)}
-            placeholder="Введите токен Ozon..."
+            placeholder="Введите API Key Ozon..."
             className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all"
           />
           <p className="text-xs text-gray-500">Используется для получения статистики по заказам с Ozon.</p>

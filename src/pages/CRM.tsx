@@ -216,11 +216,11 @@ export default function CRM() {
   };
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex gap-6 relative">
+    <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)] flex gap-6 relative">
       {/* Toast Notification */}
       {toastMessage && (
         <div className={`absolute top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-0 opacity-100 ${
-          toastMessage.type === 'success' ? 'bg-green-500/20 border border-green-500/30 text-green-300' : 'bg-red-500/20 border border-red-500/30 text-red-300'
+          toastMessage.type === 'success' ? 'bg-green-900/50 border border-green-500/30 text-green-300' : 'bg-red-900/50 border border-red-500/30 text-red-300'
         }`}>
           {toastMessage.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
           <div>
@@ -233,34 +233,34 @@ export default function CRM() {
       {/* Sort Modal */}
       {showSortModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
-            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#222] rounded-t-2xl">
+          <div className="bg-[#1a1a1a] rounded-3xl border border-white/10 w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#222] rounded-t-3xl">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <Users className="text-purple-500" />
                 Топ пользователей
               </h2>
-              <button onClick={() => setShowSortModal(false)} className="text-gray-400 hover:text-white transition-colors">
+              <button onClick={() => setShowSortModal(false)} className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
                 <X size={24} />
               </button>
             </div>
             
-            <div className="p-4 border-b border-white/10 flex gap-4 items-center bg-[#1a1a1a]">
-              <div className="flex gap-2 bg-[#222] p-1 rounded-xl border border-white/5">
+            <div className="p-6 border-b border-white/5 flex gap-4 items-center bg-[#1a1a1a]">
+              <div className="flex gap-2 bg-[#2a2a2a] p-1.5 rounded-xl border border-white/5">
                 <button 
                   onClick={() => setSortPlatform('all')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'all' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'all' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 >
                   Все
                 </button>
                 <button 
                   onClick={() => setSortPlatform('tg')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'tg' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'tg' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 >
                   Telegram
                 </button>
                 <button 
                   onClick={() => setSortPlatform('vk')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'vk' ? 'bg-blue-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${sortPlatform === 'vk' ? 'bg-blue-500 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 >
                   ВКонтакте
                 </button>
@@ -270,7 +270,7 @@ export default function CRM() {
               
               <button 
                 onClick={selectAllUsers}
-                className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                className="text-sm text-purple-400 hover:text-purple-300 transition-colors font-medium px-4 py-2 hover:bg-purple-500/10 rounded-xl"
               >
                 {selectedUsersForInfo.length === sortedUsers.length ? 'Снять выделение' : 'Выбрать всех'}
               </button>
@@ -278,53 +278,53 @@ export default function CRM() {
               <button 
                 onClick={() => sendToTelegram(sortedUsers.filter(u => selectedUsersForInfo.includes(u.id)))}
                 disabled={selectedUsersForInfo.length === 0 || isSendingInfo}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-400 text-white rounded-xl transition-all shadow-lg shadow-purple-900/20 text-sm font-medium"
+                className="flex items-center gap-2 px-6 py-3 bg-white text-black hover:bg-gray-200 disabled:bg-[#2a2a2a] disabled:text-gray-500 rounded-xl transition-all shadow-lg text-sm font-bold"
               >
-                <Send size={16} />
+                <Send size={18} />
                 {isSendingInfo ? 'Отправка...' : `Отправить инфо (${selectedUsersForInfo.length})`}
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-3">
               {sortedUsers.map((user, index) => (
                 <div 
                   key={user.id}
                   onClick={() => toggleUserSelection(user.id)}
-                  className={`flex items-center gap-4 p-4 rounded-xl border transition-colors cursor-pointer ${
+                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-colors cursor-pointer group ${
                     selectedUsersForInfo.includes(user.id) 
                       ? 'bg-purple-500/10 border-purple-500/50' 
-                      : 'bg-[#222] border-white/5 hover:bg-[#2a2a2a]'
+                      : 'bg-[#222] border-white/5 hover:bg-[#2a2a2a] hover:border-white/10'
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-gray-400 font-bold text-xs">
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-gray-400 font-bold text-sm">
                     #{index + 1}
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
                     {(user.username?.[0] || user.firstName?.[0] || '?').toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-white truncate">
+                    <div className="font-medium text-white truncate text-lg">
                       {user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''} ${user.username ? `(${user.username})` : ''}` : user.id}
                     </div>
-                    <div className="text-xs text-gray-500 truncate flex items-center gap-2 mt-1">
-                      <span className={`px-2 py-0.5 rounded text-[10px] ${user.platform === 'tg' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-400/20 text-blue-300'}`}>
+                    <div className="text-sm text-gray-500 truncate flex items-center gap-3 mt-1">
+                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-medium ${user.platform === 'tg' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-400/20 text-blue-300'}`}>
                         {user.platform === 'tg' ? 'Telegram' : 'VK'}
                       </span>
                       <span>ID: {user.id}</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="text-sm font-bold text-white bg-white/5 px-3 py-1 rounded-lg border border-white/10">
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="text-sm font-bold text-white bg-[#2a2a2a] px-4 py-2 rounded-xl border border-white/5">
                       {user.messageCount || 0} сообщ.
                     </div>
-                    <div className="text-[10px] text-gray-500">
+                    <div className="text-xs text-gray-500">
                       Актив: {user.lastMessageAt?.seconds ? new Date(user.lastMessageAt.seconds * 1000).toLocaleDateString('ru-RU') : '-'}
                     </div>
                   </div>
                 </div>
               ))}
               {sortedUsers.length === 0 && (
-                <div className="text-center text-gray-500 py-12">Нет пользователей для отображения</div>
+                <div className="text-center text-gray-500 py-12 text-lg">Нет пользователей для отображения</div>
               )}
             </div>
           </div>
@@ -332,56 +332,58 @@ export default function CRM() {
       )}
 
       {/* Users List */}
-      <div className="w-1/3 bg-[#1a1a1a] rounded-2xl border border-white/10 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-white/10 space-y-4">
+      <div className="w-1/3 bg-[#1a1a1a] rounded-3xl border border-white/10 flex flex-col overflow-hidden">
+        <div className="p-6 border-b border-white/5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <User className="text-purple-500" /> Пользователи
-              <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-gray-400">{users.length}</span>
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <User className="text-purple-500" size={28} /> Пользователи
+              <span className="text-sm bg-[#2a2a2a] px-3 py-1 rounded-xl text-gray-300 font-medium">{users.length}</span>
             </h2>
             <button 
               onClick={() => setShowSortModal(true)}
-              className="p-2 bg-[#222] hover:bg-[#2a2a2a] text-gray-400 hover:text-white rounded-xl border border-white/5 transition-colors"
+              className="p-3 bg-[#2a2a2a] hover:bg-[#333] text-gray-400 hover:text-white rounded-xl transition-colors"
               title="Топ пользователей"
             >
-              <Filter size={18} />
+              <Filter size={20} />
             </button>
           </div>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
             <input 
               type="text" 
               placeholder="Поиск..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white outline-none focus:border-purple-500"
+              className="w-full bg-[#2a2a2a] border border-white/5 rounded-xl pl-12 pr-4 py-4 text-white outline-none focus:ring-2 focus:ring-purple-500 transition-all"
             />
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
           {loading ? (
-            <div className="text-center text-gray-500 py-8">Загрузка...</div>
+            <div className="text-center text-gray-500 py-12 text-lg">Загрузка...</div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">Пользователи не найдены</div>
+            <div className="text-center text-gray-500 py-12 text-lg">Пользователи не найдены</div>
           ) : (
             filteredUsers.map(user => (
               <div 
                 key={user.id}
                 onClick={() => setSelectedUser(user)}
-                className={`p-3 rounded-xl cursor-pointer transition-colors flex items-center gap-3 ${selectedUser?.id === user.id ? 'bg-purple-500/20 border border-purple-500/50' : 'bg-[#222] border border-white/5 hover:bg-[#2a2a2a]'}`}
+                className={`p-4 rounded-2xl cursor-pointer transition-colors flex items-center gap-4 group ${selectedUser?.id === user.id ? 'bg-purple-500/20 border border-purple-500/50' : 'bg-[#222] border border-white/5 hover:bg-[#2a2a2a] hover:border-white/10'}`}
               >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
                   {(user.username?.[0] || user.firstName?.[0] || '?').toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-white truncate">
+                  <div className="font-medium text-white text-lg truncate">
                     {user.username || user.firstName ? `${user.firstName || ''} ${user.lastName || ''} ${user.username ? `(${user.username})` : ''}` : user.id}
                   </div>
-                  <div className="text-xs text-gray-500 truncate flex items-center gap-2">
-                    <span>{user.platform === 'tg' ? 'Telegram' : user.platform === 'vk' ? 'VK' : 'Unknown'}</span>
+                  <div className="text-sm text-gray-500 truncate flex items-center gap-3 mt-1">
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${user.platform === 'tg' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-400/20 text-blue-300'}`}>
+                      {user.platform === 'tg' ? 'Telegram' : user.platform === 'vk' ? 'VK' : 'Unknown'}
+                    </span>
                     {user.tags && user.tags.length > 0 && (
-                      <span className="bg-white/10 px-1.5 rounded text-[10px] text-gray-300">
+                      <span className="bg-[#2a2a2a] px-2 py-0.5 rounded-md text-[11px] text-gray-300 border border-white/5">
                         {user.tags.length} тегов
                       </span>
                     )}
@@ -394,24 +396,24 @@ export default function CRM() {
       </div>
 
       {/* User Profile */}
-      <div className="flex-1 bg-[#1a1a1a] rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+      <div className="flex-1 bg-[#1a1a1a] rounded-3xl border border-white/10 flex flex-col overflow-hidden">
         {selectedUser ? (
           <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-            <div className="flex items-start justify-between mb-8">
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-purple-900/20">
+            <div className="flex items-start justify-between mb-10">
+              <div className="flex items-center gap-6">
+                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-4xl shadow-xl shadow-purple-900/20">
                   {(selectedUser.username?.[0] || selectedUser.firstName?.[0] || '?').toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-white">
+                  <h2 className="text-3xl font-bold text-white mb-2">
                     {selectedUser.username || selectedUser.firstName ? `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}` : 'Без имени'}
                   </h2>
-                  <div className="text-gray-400 text-sm mt-1">{selectedUser.username || selectedUser.id}</div>
-                  <div className="flex gap-2 mt-2">
-                    <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  <div className="text-gray-400 text-lg mb-3">{selectedUser.username || selectedUser.id}</div>
+                  <div className="flex gap-3">
+                    <span className="px-3 py-1 rounded-lg text-sm font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
                       {selectedUser.platform === 'tg' ? 'Telegram' : 'VK'}
                     </span>
-                    <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-gray-400 border border-white/10">
+                    <span className="px-3 py-1 rounded-lg text-sm font-medium bg-[#2a2a2a] text-gray-300 border border-white/5">
                       ID: {selectedUser.id}
                     </span>
                   </div>
@@ -420,25 +422,25 @@ export default function CRM() {
               <button
                 onClick={() => sendToTelegram([selectedUser])}
                 disabled={isSendingInfo}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-400 text-white rounded-lg transition-colors"
+                className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-200 disabled:bg-[#2a2a2a] disabled:text-gray-500 text-black font-bold rounded-xl transition-colors shadow-lg"
                 title="Отправить информацию в Telegram"
               >
-                <Send size={18} />
+                <Send size={20} />
                 <span>{isSendingInfo ? 'Отправка...' : 'Отправить инфо'}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-2 gap-6 mb-8">
-              <div className="bg-[#222] p-4 rounded-xl border border-white/5">
-                <h3 className="text-sm font-medium text-gray-400 mb-4">Теги и Сегменты</h3>
+              <div className="bg-[#222] p-6 rounded-2xl border border-white/5">
+                <h3 className="text-lg font-medium text-gray-300 mb-6">Теги и Сегменты</h3>
                 
-                <div className="flex gap-2 mb-4">
+                <div className="flex gap-3 mb-6">
                   <input
                     type="text"
                     value={newTag}
                     onChange={(e) => setNewTag(e.target.value)}
                     placeholder="Новый тег..."
-                    className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 outline-none"
+                    className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter' && newTag.trim()) {
                         e.preventDefault();
@@ -470,13 +472,15 @@ export default function CRM() {
                       }
                     }}
                   />
-                  <input
-                    type="color"
-                    value={newTagColor}
-                    onChange={(e) => setNewTagColor(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
-                    title="Цвет тега"
-                  />
+                  <div className="bg-[#2a2a2a] border border-white/5 rounded-xl p-2 flex items-center justify-center">
+                    <input
+                      type="color"
+                      value={newTagColor}
+                      onChange={(e) => setNewTagColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
+                      title="Цвет тега"
+                    />
+                  </div>
                   <button
                     onClick={async () => {
                       if (newTag.trim()) {
@@ -507,23 +511,23 @@ export default function CRM() {
                         }
                       }
                     }}
-                    className="bg-purple-600 hover:bg-purple-500 text-white px-3 rounded-lg flex items-center justify-center transition-colors"
+                    className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl flex items-center justify-center transition-colors shadow-lg"
                   >
-                    <Plus size={14} />
+                    <Plus size={20} />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-2 mb-6">
+                <div className="flex flex-wrap gap-3 mb-8">
                   {selectedUser.tags && selectedUser.tags.length > 0 ? (
                     selectedUser.tags.map((tag: string, i: number) => {
                       const color = selectedUser.tagColors?.[tag] || '#a855f7';
                       return (
                         <span 
                           key={i} 
-                          className="px-3 py-1 rounded-lg text-sm flex items-center gap-2 text-white group"
+                          className="px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 text-white group shadow-md"
                           style={{ backgroundColor: color }}
                         >
-                          <Tag size={12} /> {tag}
+                          <Tag size={14} /> {tag}
                           <button 
                             onClick={async () => {
                               if (window.confirm(`Удалить тег #${tag}?`)) {
@@ -540,34 +544,34 @@ export default function CRM() {
                                 }
                               }
                             }}
-                            className="p-0.5 hover:bg-black/20 rounded opacity-50 hover:opacity-100 transition-all ml-1"
+                            className="p-1 hover:bg-black/20 rounded-lg opacity-50 hover:opacity-100 transition-all ml-1"
                             title="Удалить тег"
                           >
-                            <X size={12} />
+                            <X size={14} />
                           </button>
                         </span>
                       );
                     })
                   ) : (
-                    <div className="text-gray-500 text-sm italic">Нет тегов</div>
+                    <div className="text-gray-500 text-base italic bg-[#1a1a1a] px-4 py-3 rounded-xl border border-white/5 w-full text-center">Нет тегов</div>
                   )}
                 </div>
 
                 {selectedUser.tags && selectedUser.tags.length > 0 && (
                   <button 
                     onClick={handleDeleteTags}
-                    className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 text-sm"
+                    className="w-full py-3 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-900/30 transition-colors flex items-center justify-center gap-2 font-medium"
                   >
-                    <Trash2 size={16} /> Удалить все теги
+                    <Trash2 size={18} /> Удалить все теги
                   </button>
                 )}
               </div>
 
-              <div className="bg-[#222] p-4 rounded-xl border border-white/5">
-                <h3 className="text-sm font-medium text-gray-400 mb-4">Информация</h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Первое касание (не стирается):</span>
+              <div className="bg-[#222] p-6 rounded-2xl border border-white/5">
+                <h3 className="text-lg font-medium text-gray-300 mb-6">Информация</h3>
+                <div className="space-y-4 text-base">
+                  <div className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-white/5">
+                    <span className="text-gray-400">Первое касание:</span>
                     <span className="text-white font-medium">
                       {selectedUser.createdAt?.seconds 
                         ? new Date(selectedUser.createdAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
@@ -576,26 +580,26 @@ export default function CRM() {
                             : '-')}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Последняя активность:</span>
-                    <span className="text-white">
+                  <div className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-white/5">
+                    <span className="text-gray-400">Последняя активность:</span>
+                    <span className="text-white font-medium">
                       {selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Всего сообщений:</span>
-                    <span className="text-white font-bold">{selectedUser.messageCount || 0}</span>
+                  <div className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-white/5">
+                    <span className="text-gray-400">Всего сообщений:</span>
+                    <span className="text-white font-bold text-lg">{selectedUser.messageCount || 0}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Платформа:</span>
-                    <span className="text-white uppercase">{selectedUser.platform || 'TG'}</span>
+                  <div className="flex justify-between items-center bg-[#1a1a1a] p-3 rounded-xl border border-white/5">
+                    <span className="text-gray-400">Платформа:</span>
+                    <span className="text-white uppercase font-medium">{selectedUser.platform || 'TG'}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-[#222] p-4 rounded-xl border border-white/5 mt-4">
-                <h3 className="text-sm font-medium text-gray-400 mb-4">Статистика активности</h3>
-                <div className="space-y-4">
+              <div className="bg-[#222] p-6 rounded-2xl border border-white/5 mt-2 col-span-2">
+                <h3 className="text-lg font-medium text-gray-300 mb-6">Статистика активности</h3>
+                <div className="space-y-6">
                   {(() => {
                     const createdDate = selectedUser.createdAt?.seconds ? new Date(selectedUser.createdAt.seconds * 1000) : (selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : new Date());
                     const lastActiveDate = selectedUser.lastMessageAt?.seconds ? new Date(selectedUser.lastMessageAt.seconds * 1000) : null;
@@ -613,20 +617,23 @@ export default function CRM() {
 
                     return (
                       <>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="bg-black/20 p-3 rounded-lg border border-white/5">
-                            <div className="text-gray-500 text-xs mb-1">В среднем за неделю</div>
-                            <div className="text-white font-medium">{msgsPerWeek.toFixed(1)} сообщ.</div>
+                        <div className="grid grid-cols-2 gap-4 text-base">
+                          <div className="bg-[#1a1a1a] p-5 rounded-xl border border-white/5 flex flex-col items-center justify-center">
+                            <div className="text-gray-400 mb-2 font-medium">В среднем за неделю</div>
+                            <div className="text-white font-bold text-2xl">{msgsPerWeek.toFixed(1)} <span className="text-sm font-normal text-gray-500">сообщ.</span></div>
                           </div>
-                          <div className="bg-black/20 p-3 rounded-lg border border-white/5">
-                            <div className="text-gray-500 text-xs mb-1">В среднем за месяц</div>
-                            <div className="text-white font-medium">{msgsPerMonth.toFixed(1)} сообщ.</div>
+                          <div className="bg-[#1a1a1a] p-5 rounded-xl border border-white/5 flex flex-col items-center justify-center">
+                            <div className="text-gray-400 mb-2 font-medium">В среднем за месяц</div>
+                            <div className="text-white font-bold text-2xl">{msgsPerMonth.toFixed(1)} <span className="text-sm font-normal text-gray-500">сообщ.</span></div>
                           </div>
                         </div>
                         
-                        <div className="text-xs text-gray-500 mt-2 bg-blue-500/10 p-2 rounded border border-blue-500/20">
-                          Пользователь с нами уже <span className="text-blue-400 font-bold">{daysSinceStart}</span> дней. 
-                          {daysSinceLastActive === -1 ? ' Нет активности.' : daysSinceLastActive === 0 ? ' Был активен сегодня.' : ` Не проявлял активность ${daysSinceLastActive} дней.`}
+                        <div className="text-sm text-gray-300 mt-4 bg-blue-900/20 p-4 rounded-xl border border-blue-500/20 flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <div>
+                            Пользователь с нами уже <span className="text-blue-400 font-bold">{daysSinceStart}</span> дней. 
+                            {daysSinceLastActive === -1 ? ' Нет активности.' : daysSinceLastActive === 0 ? ' Был активен сегодня.' : ` Не проявлял активность ${daysSinceLastActive} дней.`}
+                          </div>
                         </div>
                       </>
                     );
@@ -636,9 +643,11 @@ export default function CRM() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500 flex-col gap-4">
-            <User size={48} className="opacity-20" />
-            <p>Выберите пользователя для просмотра профиля</p>
+          <div className="flex-1 flex items-center justify-center text-gray-500 flex-col gap-6 bg-[#1a1a1a]">
+            <div className="w-24 h-24 rounded-full bg-[#222] flex items-center justify-center border border-white/5">
+              <User size={48} className="text-gray-600" />
+            </div>
+            <p className="text-xl font-medium">Выберите пользователя для просмотра профиля</p>
           </div>
         )}
       </div>

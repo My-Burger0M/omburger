@@ -14,7 +14,7 @@ import Mailings from './pages/Mailings';
 import CRM from './pages/CRM';
 import EventCalendar from './pages/EventCalendar';
 import Teams from './pages/Teams';
-import KnowledgeBase from './pages/KnowledgeBase';
+import QuickReplies from './pages/QuickReplies';
 import CostSettings from './pages/CostSettings';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -83,7 +83,7 @@ function AppContent() {
                   <Route path="/crm" element={<CRM />} />
                   <Route path="/calendar" element={<EventCalendar />} />
                   <Route path="/teams" element={<Teams />} />
-                  <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                  <Route path="/quick-replies" element={<QuickReplies />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/cost-settings" element={<CostSettings />} />
                 </Routes>
