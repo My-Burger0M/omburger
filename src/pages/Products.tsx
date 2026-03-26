@@ -135,6 +135,22 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
+  const handleSync = async () => {
+    if (!currentUser) return;
+    setIsSyncing(true);
+    try {
+      // Import axios at the top of the file if not already imported
+      const axios = (await import('axios')).default;
+      await axios.post('/api/wb/fetch', { userId: currentUser.uid });
+      // We don't have a separate ozon fetch endpoint yet, but wb/fetch aggregates stats
+    } catch (error) {
+      console.error("Error syncing:", error);
+      alert('Ошибка при синхронизации данных. Убедитесь, что серверная часть (backend) запущена на вашем хостинге.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -223,10 +239,40 @@ export default function Products() {
             </span>
           </h1>
         </div>
+        <button 
+          onClick={handleSync}
+          disabled={isSyncing}
+          className="bg-[#1a1a1a] border border-white/10 hover:bg-[#2a2a2a] text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
+          <span className="hidden sm:inline">{isSyncing ? 'Обновление...' : 'Обновить данные'}</span>
+        </button>
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Sales */}
+        <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
+          <div className="z-10">
+            <div className="text-gray-400 text-sm mb-1">Продаж в сумме:</div>
+            <div className="text-2xl font-bold text-white">{stats.total}</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-500 to-indigo-500 p-3 rounded-xl text-white font-bold text-lg w-12 h-12 flex items-center justify-center">
+            Σ
+          </div>
+        </div>
+
+        {/* WB Sales */}
+        <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
+          <div className="z-10">
+            <div className="text-gray-400 text-sm mb-1">Продаж Wildberries:</div>
+            <div className="text-2xl font-bold text-white">{stats.wb}</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-600 to-fuchsia-600 p-3 rounded-xl text-white font-bold text-lg w-12 h-12 flex items-center justify-center">
+            WB
+          </div>
+        </div>
+
         {/* Ozon Sales */}
         <div className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center justify-between border border-white/5 relative overflow-hidden">
           <div className="z-10">
