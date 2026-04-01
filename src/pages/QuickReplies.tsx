@@ -4,9 +4,15 @@ import { collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp,
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 
+interface MainProduct {
+  id: string;
+  name: string;
+}
+
 interface QRProduct {
   id: string;
   name: string;
+  linkedProducts?: string[];
 }
 
 interface QuickReply {
@@ -20,6 +26,7 @@ interface QuickReply {
 export default function QuickReplies() {
   const { currentUser } = useAuth();
   const [products, setProducts] = useState<QRProduct[]>([]);
+  const [mainProducts, setMainProducts] = useState<MainProduct[]>([]);
   const [replies, setReplies] = useState<QuickReply[]>([]);
   
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -29,6 +36,7 @@ export default function QuickReplies() {
   
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [newProductName, setNewProductName] = useState('');
+  const [newProductLinked, setNewProductLinked] = useState<string[]>([]);
   
   const [isReplyModalOpen, setIsReplyModalOpen] = useState(false);
   const [newReply, setNewReply] = useState({ productId: '', category: '', number: '', text: '' });
@@ -43,6 +51,11 @@ export default function QuickReplies() {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QRProduct)));
     });
 
+    const qMainProducts = query(collection(db, 'users', currentUser.uid, 'products'), orderBy('createdAt', 'desc'));
+    const unsubMainProducts = onSnapshot(qMainProducts, (snapshot) => {
+      setMainProducts(snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name } as MainProduct)));
+    });
+
     const qReplies = query(collection(db, 'users', currentUser.uid, 'quick_replies'), orderBy('createdAt', 'desc'));
     const unsubReplies = onSnapshot(qReplies, (snapshot) => {
       setReplies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QuickReply)));
@@ -50,6 +63,7 @@ export default function QuickReplies() {
 
     return () => {
       unsubProducts();
+      unsubMainProducts();
       unsubReplies();
     };
   }, [currentUser]);
@@ -59,9 +73,11 @@ export default function QuickReplies() {
     try {
       await addDoc(collection(db, 'users', currentUser.uid, 'qr_products'), {
         name: newProductName.trim(),
+        linkedProducts: newProductLinked,
         createdAt: serverTimestamp()
       });
       setNewProductName('');
+      setNewProductLinked([]);
       setIsProductModalOpen(false);
     } catch (err) {
       console.error('Error adding product:', err);
@@ -92,13 +108,21 @@ export default function QuickReplies() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!currentUser || !window.confirm('Удалить этот товар? Все связанные ответы также будут удалены.')) return;
+    if (!currentUser || !window.confirm('Удалить эту категорию? Все связанные ответы также будут удалены.')) return;
     try {
       await deleteDoc(doc(db, 'users', currentUser.uid, 'qr_products', id));
       // Optionally delete related replies here
     } catch (err) {
       console.error('Error deleting product:', err);
     }
+  };
+
+  const toggleLinkedProduct = (productId: string) => {
+    setNewProductLinked(prev => 
+      prev.includes(productId) 
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    );
   };
 
   const filteredCategories = Array.from(new Set(replies.filter(r => r.productId === selectedProductId).map(r => r.category)));
@@ -108,9 +132,6 @@ export default function QuickReplies() {
   
   let displayedText = selectedReply ? selectedReply.text : '';
   if (buyerName.trim() && displayedText) {
-    // Replace placeholders like [Имя], {Имя}, Имя, etc. if needed.
-    // For simplicity, we can just replace a specific placeholder like {Имя} or just prepend/append if no placeholder.
-    // Let's assume the user uses {Имя} as a placeholder.
     if (displayedText.includes('{Имя}')) {
       displayedText = displayedText.replace(/{Имя}/g, buyerName);
     } else {
@@ -136,7 +157,7 @@ export default function QuickReplies() {
           onClick={() => setIsProductModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2 bg-[#2a2a2a] hover:bg-[#333] border border-white/10 rounded-xl text-white transition-colors"
         >
-          Создать товар
+          Создать категорию товаров
           <div className="bg-green-600/20 text-green-500 p-1 rounded-md ml-2">
             <Plus className="w-4 h-4" />
           </div>
@@ -153,7 +174,7 @@ export default function QuickReplies() {
       </div>
 
       <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
-        <h3 className="text-sm text-gray-400 mb-4">Выберите продукт</h3>
+        <h3 className="text-sm text-gray-400 mb-4">Выберите параметры</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <select
             value={selectedProductId}
@@ -164,7 +185,7 @@ export default function QuickReplies() {
             }}
             className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
-            <option value="">Товар</option>
+            <option value="">Категория товаров</option>
             {products.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
@@ -179,7 +200,7 @@ export default function QuickReplies() {
             disabled={!selectedProductId}
             className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
           >
-            <option value="">Категория</option>
+            <option value="">Подкатегория</option>
             {filteredCategories.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -191,7 +212,7 @@ export default function QuickReplies() {
             disabled={!selectedCategory}
             className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
           >
-            <option value="">Номер</option>
+            <option value="">Ключевое слово / Номер</option>
             {filteredNumbers.map(n => (
               <option key={n} value={n}>{n}</option>
             ))}
@@ -229,17 +250,37 @@ export default function QuickReplies() {
       {isProductModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Создать товар</h2>
+            <h2 className="text-xl font-bold mb-4">Создать категорию товаров</h2>
             <input
               type="text"
               value={newProductName}
               onChange={(e) => setNewProductName(e.target.value)}
-              placeholder="Название товара"
-              className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 mb-6"
+              placeholder="Название категории (напр. Свечи)"
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 mb-4"
             />
             
+            <div className="mb-6">
+              <h3 className="text-sm text-gray-400 mb-2">Привязать товары (API):</h3>
+              <div className="max-h-40 overflow-y-auto space-y-2 bg-[#2a2a2a] p-2 rounded-xl border border-white/5">
+                {mainProducts.map(p => (
+                  <label key={p.id} className="flex items-center gap-3 p-2 hover:bg-[#333] rounded-lg cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newProductLinked.includes(p.id)}
+                      onChange={() => toggleLinkedProduct(p.id)}
+                      className="w-4 h-4 rounded border-gray-600 text-blue-600 focus:ring-blue-500 bg-[#1a1a1a]"
+                    />
+                    <span className="text-sm text-white">{p.name}</span>
+                  </label>
+                ))}
+                {mainProducts.length === 0 && (
+                  <div className="text-sm text-gray-500 p-2 text-center">Нет доступных товаров</div>
+                )}
+              </div>
+            </div>
+            
             <div className="mb-6 max-h-40 overflow-y-auto space-y-2">
-              <h3 className="text-sm text-gray-400 mb-2">Существующие товары:</h3>
+              <h3 className="text-sm text-gray-400 mb-2">Существующие категории:</h3>
               {products.map(p => (
                 <div key={p.id} className="flex justify-between items-center bg-[#2a2a2a] p-2 rounded-lg">
                   <span className="text-sm">{p.name}</span>
@@ -281,7 +322,7 @@ export default function QuickReplies() {
                 onChange={(e) => setNewReply({ ...newReply, productId: e.target.value })}
                 className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
-                <option value="">Выберите товар</option>
+                <option value="">Выберите категорию</option>
                 {products.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -291,7 +332,7 @@ export default function QuickReplies() {
                 type="text"
                 value={newReply.category}
                 onChange={(e) => setNewReply({ ...newReply, category: e.target.value })}
-                placeholder="Категория (напр. Брак)"
+                placeholder="Подкатегория (напр. Брак)"
                 className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
               
@@ -299,7 +340,7 @@ export default function QuickReplies() {
                 type="text"
                 value={newReply.number}
                 onChange={(e) => setNewReply({ ...newReply, number: e.target.value })}
-                placeholder="Номер (напр. 1)"
+                placeholder="Ключевое слово или Номер (напр. 0)"
                 className="w-full bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>

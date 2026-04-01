@@ -125,11 +125,11 @@ const MessageNode = ({ id, data }: { id: string, data: any }) => {
         {data.mediaUrl && (
           <div className="h-24 bg-[#222] rounded flex items-center justify-center border border-white/5 overflow-hidden relative group">
             {/\.(mp4|webm|ogg|mov)$/i.test(data.mediaUrl) ? (
-              <video src={data.mediaUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" muted loop playsInline autoPlay />
+              <video src={data.mediaUrl || undefined} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" muted loop playsInline autoPlay />
             ) : /\.(jpeg|jpg|gif|png|webp)$/i.test(data.mediaUrl) || (data.mediaUrl.startsWith('http') && !data.mediaUrl.includes('vk.com')) ? (
               <>
                 <img 
-                  src={data.mediaUrl} 
+                  src={data.mediaUrl || undefined} 
                   alt="media" 
                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity absolute inset-0 z-10" 
                   onError={(e) => {

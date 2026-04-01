@@ -2141,31 +2141,10 @@ async function startServer() {
                       count = 0;
                     }
                     
-                    // Add missing products
-                    if (order.supplierArticle && !existingArticles.has(order.supplierArticle)) {
-                      existingArticles.add(order.supplierArticle);
-                      const newProductRef = doc(collection(db, 'users', userDoc.id, 'products'));
-                      newProductsBatch.set(newProductRef, {
-                        name: order.subject || order.supplierArticle,
-                        article: order.supplierArticle,
-                        marketplace: 'wb',
-                        costPrice: 0,
-                        salesPercent: 0,
-                        imageUrl: '',
-                        createdAt: serverTimestamp()
-                      });
-                      newProductsCount++;
-                      if (newProductsCount === 400) {
-                        await newProductsBatch.commit();
-                        newProductsCount = 0;
-                      }
-                    }
+                    // Removed auto-creation of missing products
                   }
                   if (count > 0) {
                     await batch.commit();
-                  }
-                  if (newProductsCount > 0) {
-                    await newProductsBatch.commit();
                   }
                   console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
                 }
@@ -2278,27 +2257,10 @@ async function startServer() {
                   count = 0;
                 }
 
-                if (article !== 'unknown' && !existingArticles.has(article)) {
-                  existingArticles.add(article);
-                  const newProductRef = doc(collection(db, 'users', userDoc.id, 'products'));
-                  newProductsBatch.set(newProductRef, {
-                    name: productName,
-                    article: article,
-                    price: price,
-                    cost: 0,
-                    createdAt: serverTimestamp()
-                  });
-                  newProductsCount++;
-                  if (newProductsCount === 400) {
-                    await newProductsBatch.commit();
-                    newProductsCount = 0;
-                    newProductsBatch = writeBatch(db);
-                  }
-                }
+                // Removed auto-creation of missing products for Ozon
               }
               
               if (count > 0) await batch.commit();
-              if (newProductsCount > 0) await newProductsBatch.commit();
               
               await aggregateUserStats(userDoc.id);
             }

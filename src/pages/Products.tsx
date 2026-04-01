@@ -308,7 +308,7 @@ export default function Products() {
             {/* Image Section - Aspect Ratio 3:4 (1200x1600) */}
             <div className="relative aspect-[3/4] w-full">
               <img 
-                src={product.imageUrl} 
+                src={product.imageUrl || undefined} 
                 alt={product.name} 
                 className="w-full h-full object-cover"
               />
@@ -351,14 +351,18 @@ export default function Products() {
                   <div className="text-gray-500 text-sm">Себестоимость:</div>
                   <div className="text-xl font-medium text-white">{product.costPrice} ₽</div>
                 </div>
-                <div className="flex gap-1">
-                  {product.apiWb && (
-                    <div className="w-6 h-6 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center text-xs font-bold border border-purple-500/30" title="WB API подключен">W</div>
-                  )}
-                  {product.apiOzon && (
-                    <div className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/30" title="Ozon API подключен">O</div>
-                  )}
+                <div className="text-right">
+                  <div className="text-gray-500 text-sm">Заказов:</div>
+                  <div className="text-xl font-medium text-white">{product.salesPercent || 0} шт.</div>
                 </div>
+              </div>
+              <div className="flex justify-end gap-1 mt-2">
+                {product.apiWb && (
+                  <div className="w-6 h-6 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center text-xs font-bold border border-purple-500/30" title="WB API подключен">W</div>
+                )}
+                {product.apiOzon && (
+                  <div className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/30" title="Ozon API подключен">O</div>
+                )}
               </div>
             </div>
           </div>
@@ -461,7 +465,7 @@ export default function Products() {
                 >
                   {previewUrl ? (
                     <>
-                      <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={previewUrl || undefined} alt="Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-white font-medium">Изменить фото</span>
                       </div>

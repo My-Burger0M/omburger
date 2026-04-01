@@ -84,7 +84,7 @@ export default function Login() {
           <label className="cursor-pointer group relative">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center overflow-hidden shadow-lg transition-transform group-hover:scale-105">
               {logo ? (
-                <img src={logo} alt="Logo" className="w-full h-full object-cover" />
+                <img src={logo || undefined} alt="Logo" className="w-full h-full object-cover" />
               ) : (
                 <span className="text-3xl font-bold italic">OM</span>
               )}

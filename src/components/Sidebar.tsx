@@ -110,7 +110,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             {loading ? (
               <div className="w-full h-full animate-pulse bg-white/10" />
             ) : logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
+              <img src={logoUrl || undefined} alt="Logo" className="w-full h-full object-cover" />
             ) : (
               <span className="text-lg font-bold text-white">OM</span>
             )}

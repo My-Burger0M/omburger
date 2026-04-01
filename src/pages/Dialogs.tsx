@@ -136,7 +136,7 @@ const Avatar = ({ src, alt, fallback, className, fallbackClassName }: { src?: st
 
   return (
     <img 
-      src={src} 
+      src={src || undefined} 
       alt={alt} 
       className={className} 
       referrerPolicy="no-referrer"
@@ -870,7 +870,7 @@ export default function Dialogs() {
               <div className="flex gap-3">
                 <div className="relative shrink-0">
                   <Avatar
-                    src={chat.avatar}
+                    src={chat.avatar || undefined}
                     alt={chat.username}
                     className="w-12 h-12 rounded-full object-cover bg-[#2a2a2a]"
                     fallbackClassName="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-400 font-bold text-lg"
@@ -941,7 +941,7 @@ export default function Dialogs() {
               onClick={() => setProfileModalOpen(true)}
             >
               <Avatar
-                src={selectedChat.avatar}
+                src={selectedChat.avatar || undefined}
                 alt={selectedChat.username}
                 className="w-10 h-10 rounded-full object-cover"
                 fallbackClassName="w-10 h-10 rounded-full bg-gradient-to-br from-purple-900/50 to-blue-900/50 flex items-center justify-center text-white font-bold"
@@ -1040,7 +1040,7 @@ export default function Dialogs() {
                             <span>(Голосовое сообщение)</span>
                           </div>
                           <audio 
-                            src={msg.mediaUrl} 
+                            src={msg.mediaUrl || undefined} 
                             controls 
                             className="h-8 w-full max-w-[200px]" 
                             onPlay={(e) => handleVoicePlay(msg.id, msg.playedAt, (e.target as HTMLAudioElement).duration)}
@@ -1065,7 +1065,7 @@ export default function Dialogs() {
                           </a>
                         </div>
                       ) : (
-                        <img src={msg.mediaUrl} alt="[Фото]" className="w-full h-auto max-h-64 object-contain" />
+                        <img src={msg.mediaUrl || undefined} alt="[Фото]" className="w-full h-auto max-h-64 object-contain" />
                       )}
                     </div>
                   )}
@@ -1681,7 +1681,7 @@ export default function Dialogs() {
                   <div className="flex flex-col items-center mb-8">
                     <div className="w-24 h-24 rounded-full bg-[#1a1a1a] mb-4 overflow-hidden border-2 border-purple-500/20">
                       <Avatar
-                        src={selectedChat.avatar}
+                        src={selectedChat.avatar || undefined}
                         alt={selectedChat.username}
                         className="w-full h-full object-cover"
                         fallbackClassName="w-full h-full flex items-center justify-center text-3xl font-bold text-gray-500"

@@ -677,7 +677,7 @@ function MiddleCard({ title, value, icon, bgIcon, borderColor, iconBg, imageKey,
             {loading ? (
               <div className="w-5 h-5 animate-pulse bg-white/20 rounded" />
             ) : iconUrl ? (
-              <img src={iconUrl} alt="Icon" className="w-5 h-5 object-cover" />
+              <img src={iconUrl || undefined} alt="Icon" className="w-5 h-5 object-cover" />
             ) : (
               icon
             )}
@@ -769,7 +769,7 @@ function TopCard({ title, value, percentage, icon, borderColor, iconBg, progress
           {loading ? (
             <div className="w-full h-full animate-pulse bg-white/10" />
           ) : iconUrl ? (
-            <img src={iconUrl} alt="Icon" className="w-full h-full object-cover" />
+            <img src={iconUrl || undefined} alt="Icon" className="w-full h-full object-cover" />
           ) : (
             icon
           )}
@@ -822,7 +822,7 @@ function BottomCard({ title, value, unit, icon, imageKey, onClick }: { title: st
         {loading ? (
           <div className="w-8 h-8 animate-pulse bg-white/10 rounded-full" />
         ) : iconUrl ? (
-          <img src={iconUrl} alt="Icon" className="w-8 h-8 object-cover rounded-full opacity-50 group-hover:opacity-100 transition-opacity" />
+          <img src={iconUrl || undefined} alt="Icon" className="w-8 h-8 object-cover rounded-full opacity-50 group-hover:opacity-100 transition-opacity" />
         ) : (
           icon
         )}
