@@ -223,8 +223,8 @@ export default function Dashboard() {
     }
   };
 
-  const ordersToday = marketplaceOrders.filter(o => getMskDateString(o.date) === todayStr);
-  const ordersThisMonth = marketplaceOrders.filter(o => getMskDateString(o.date) >= monthStartStr);
+  const ordersToday = marketplaceOrders.filter(o => getMskDateString(o.date) === todayStr && o.status !== 'cancelled');
+  const ordersThisMonth = marketplaceOrders.filter(o => getMskDateString(o.date) >= monthStartStr && o.status !== 'cancelled');
 
   const openMarketplaceModal = (title: string, orders: any[]) => {
     setMarketplaceModalTitle(title);

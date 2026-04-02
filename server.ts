@@ -1894,8 +1894,8 @@ async function startServer() {
         const data = doc.data();
         const platform = data.platform as 'wb' | 'ozon' || 'wb';
         
-        // Include cancelled orders to match raw order counts on WB dashboard
-        // if (data.status === 'cancelled') return;
+        // Exclude cancelled orders to match "В сборке" / active orders
+        if (data.status === 'cancelled') return;
         
         stats.total.all++;
         stats.total[platform]++;
@@ -1959,6 +1959,32 @@ async function startServer() {
 
       // Update products in batches
       const productsSnapshot = await getDocs(collection(db, 'users', userId, 'products'));
+      const salesSnapshot = await getDocs(collection(db, 'users', userId, 'marketplace_sales'));
+      
+      const salesArticleCounts: Record<string, number> = {};
+      
+      // Count WB sales
+      salesSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.saleId) {
+          if (data.saleId.startsWith('S')) {
+            if (data.article) salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) + 1;
+            if (data.nmId) salesArticleCounts[data.nmId.toString()] = (salesArticleCounts[data.nmId.toString()] || 0) + 1;
+          } else if (data.saleId.startsWith('R')) {
+            if (data.article) salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) - 1;
+            if (data.nmId) salesArticleCounts[data.nmId.toString()] = (salesArticleCounts[data.nmId.toString()] || 0) - 1;
+          }
+        }
+      });
+      
+      // Count Ozon sales (delivered orders)
+      ordersSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.platform === 'ozon' && data.status === 'delivered' && data.article) {
+          salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) + 1;
+        }
+      });
+
       const batches = [];
       let currentBatch = writeBatch(db);
       let count = 0;
@@ -1966,7 +1992,7 @@ async function startServer() {
       productsSnapshot.forEach(pDoc => {
         const pData = pDoc.data();
         if (pData.article) {
-          const salesCount = articleCounts[pData.article] || 0;
+          const salesCount = salesArticleCounts[pData.article] || 0;
           currentBatch.update(pDoc.ref, { salesPercent: salesCount });
           count++;
           if (count === 400) {
@@ -2015,42 +2041,107 @@ async function startServer() {
       let errorMsg = '';
       
       // Fetch for all time (e.g. from 2020)
-      const dateStr = '2020-01-01T00:00:00';
+      const dateStr = '2020-01-01T00:00:00Z';
       
       for (const token of allWbTokens) {
         try {
-          const response = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(dateStr)}&flag=0`, {
-            headers: { 'Authorization': token }
-          });
+          let hasMoreOrders = true;
+          let currentOrdersDateStr = '2020-01-01T00:00:00Z';
           
-          const orders = response.data;
-          if (orders && Array.isArray(orders) && orders.length > 0) {
-            const batch = writeBatch(db);
-            let count = 0;
+          while (hasMoreOrders) {
+            const response = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(currentOrdersDateStr)}&flag=0`, {
+              headers: { 'Authorization': token }
+            });
             
-            for (const order of orders) {
-              const orderId = order.srid;
-              const docRef = doc(db, 'users', userId, 'marketplace_orders', `wb_${orderId}`);
-              batch.set(docRef, {
-                platform: 'wb',
-                orderId: orderId,
-                date: order.date,
-                product: order.subject,
-                article: order.supplierArticle,
-                price: order.finishedPrice,
-                status: order.isCancel ? 'cancelled' : 'ordered',
-                updatedAt: serverTimestamp()
-              }, { merge: true });
+            const orders = response.data;
+            if (orders && Array.isArray(orders) && orders.length > 0) {
+              const batch = writeBatch(db);
+              let count = 0;
               
-              count++;
-              totalOrders++;
-              if (count === 400) {
-                await batch.commit();
-                count = 0;
+              for (const order of orders) {
+                const orderId = order.srid;
+                const docRef = doc(db, 'users', userId, 'marketplace_orders', `wb_${orderId}`);
+                batch.set(docRef, {
+                  platform: 'wb',
+                  orderId: orderId,
+                  date: order.date,
+                  product: order.subject,
+                  article: order.supplierArticle,
+                  nmId: order.nmId,
+                  price: order.finishedPrice,
+                  status: order.isCancel ? 'cancelled' : 'ordered',
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+                
+                count++;
+                totalOrders++;
+                if (count === 400) {
+                  await batch.commit();
+                  count = 0;
+                }
               }
+              if (count > 0) {
+                await batch.commit();
+              }
+              
+              if (orders.length === 100000) {
+                currentOrdersDateStr = orders[orders.length - 1].date;
+              } else {
+                hasMoreOrders = false;
+              }
+            } else {
+              hasMoreOrders = false;
             }
-            if (count > 0) {
-              await batch.commit();
+          }
+
+          // Fetch Sales
+          let hasMoreSales = true;
+          let currentSalesDateStr = '2020-01-01T00:00:00Z';
+          
+          while (hasMoreSales) {
+            const salesResponse = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${encodeURIComponent(currentSalesDateStr)}&flag=0`, {
+              headers: { 'Authorization': token }
+            });
+            
+            const sales = salesResponse.data;
+            if (sales && Array.isArray(sales) && sales.length > 0) {
+              const batch = writeBatch(db);
+              let count = 0;
+              
+              for (const sale of sales) {
+                const saleId = sale.saleID;
+                if (!saleId) continue;
+                
+                const docRef = doc(db, 'users', userId, 'marketplace_sales', `wb_${saleId}`);
+                batch.set(docRef, {
+                  platform: 'wb',
+                  saleId: saleId,
+                  date: sale.date,
+                  product: sale.subject,
+                  article: sale.supplierArticle,
+                  nmId: sale.nmId,
+                  price: sale.finishedPrice,
+                  isReturn: saleId.startsWith('R'),
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+                
+                count++;
+                if (count === 400) {
+                  await batch.commit();
+                  count = 0;
+                }
+              }
+              if (count > 0) {
+                await batch.commit();
+              }
+              
+              if (sales.length === 100000) {
+                currentSalesDateStr = sales[sales.length - 1].date;
+              } else {
+                hasMoreSales = false;
+              }
+            } else {
+              hasMoreSales = false;
             }
           }
         } catch (err: any) {
@@ -2109,44 +2200,57 @@ async function startServer() {
             
             for (const token of allWbTokens) {
               try {
-                const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(dateStr)}&flag=0`, {
-                  headers: { 'Authorization': token }
-                });
+                let hasMoreOrders = true;
+                let currentOrdersDateStr = dateStr;
+                let totalOrdersFetched = 0;
                 
-                const orders = res.data;
-                if (orders && Array.isArray(orders) && orders.length > 0) {
-                  const batch = writeBatch(db);
-                  let count = 0;
+                while (hasMoreOrders) {
+                  const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/orders?dateFrom=${encodeURIComponent(currentOrdersDateStr)}&flag=0`, {
+                    headers: { 'Authorization': token }
+                  });
                   
-                  const newProductsBatch = writeBatch(db);
-                  let newProductsCount = 0;
-                  
-                  for (const order of orders) {
-                    const orderId = order.srid;
-                    const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
-                    batch.set(docRef, {
-                      platform: 'wb',
-                      orderId: orderId,
-                      date: order.date,
-                      product: order.subject,
-                      article: order.supplierArticle,
-                      price: order.finishedPrice,
-                      status: order.isCancel ? 'cancelled' : 'ordered',
-                      updatedAt: serverTimestamp()
-                    }, { merge: true });
+                  const orders = res.data;
+                  if (orders && Array.isArray(orders) && orders.length > 0) {
+                    const batch = writeBatch(db);
+                    let count = 0;
                     
-                    count++;
-                    if (count === 400) {
+                    for (const order of orders) {
+                      const orderId = order.srid;
+                      const docRef = doc(db, 'users', userDoc.id, 'marketplace_orders', `wb_${orderId}`);
+                      batch.set(docRef, {
+                        platform: 'wb',
+                        orderId: orderId,
+                        date: order.date,
+                        product: order.subject,
+                        article: order.supplierArticle,
+                        nmId: order.nmId,
+                        price: order.finishedPrice,
+                        status: order.isCancel ? 'cancelled' : 'ordered',
+                        updatedAt: serverTimestamp()
+                      }, { merge: true });
+                      
+                      count++;
+                      totalOrdersFetched++;
+                      if (count === 400) {
+                        await batch.commit();
+                        count = 0;
+                      }
+                    }
+                    if (count > 0) {
                       await batch.commit();
-                      count = 0;
                     }
                     
-                    // Removed auto-creation of missing products
+                    if (orders.length === 100000) {
+                      currentOrdersDateStr = orders[orders.length - 1].date;
+                    } else {
+                      hasMoreOrders = false;
+                    }
+                  } else {
+                    hasMoreOrders = false;
                   }
-                  if (count > 0) {
-                    await batch.commit();
-                  }
-                  console.log(`Fetched and saved ${orders.length} WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
+                }
+                if (totalOrdersFetched > 0) {
+                  console.log(`Fetched and saved ${totalOrdersFetched} WB orders for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
                 }
               } catch (err: any) {
                 if (err.response?.status === 401) {
@@ -2167,6 +2271,111 @@ async function startServer() {
       }
     } catch (err) {
       console.error('Error in fetchWbOrders loop:', err);
+    }
+  };
+
+  // --- WB Sales Fetcher ---
+  const fetchWbSales = async (daysBack: number = 3000) => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      for (const userDoc of usersSnapshot.docs) {
+        const tokens = userDoc.data().tokens || {};
+        
+        // Get tokens from products as well
+        const productsSnapshot = await getDocs(collection(db, 'users', userDoc.id, 'products'));
+        const productTokens = new Set<string>();
+        
+        productsSnapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.apiWb) productTokens.add(data.apiWb);
+        });
+        
+        const allWbTokens = new Set<string>();
+        if (tokens.wb) allWbTokens.add(tokens.wb);
+        productTokens.forEach(t => allWbTokens.add(t));
+        
+        if (allWbTokens.size > 0) {
+          try {
+            const dateFrom = new Date();
+            dateFrom.setDate(dateFrom.getDate() - daysBack);
+            // Use proper format for WB API
+            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00Z' : dateFrom.toISOString();
+            
+            for (const token of allWbTokens) {
+              try {
+                let hasMoreSales = true;
+                let currentSalesDateStr = dateStr;
+                let totalSalesFetched = 0;
+                
+                while (hasMoreSales) {
+                  const res = await axios.get(`https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=${encodeURIComponent(currentSalesDateStr)}&flag=0`, {
+                    headers: { 'Authorization': token }
+                  });
+                  
+                  const sales = res.data;
+                  if (sales && Array.isArray(sales) && sales.length > 0) {
+                    const batch = writeBatch(db);
+                    let count = 0;
+                    
+                    for (const sale of sales) {
+                      const saleId = sale.saleID;
+                      if (!saleId) continue;
+                      
+                      const docRef = doc(db, 'users', userDoc.id, 'marketplace_sales', `wb_${saleId}`);
+                      batch.set(docRef, {
+                        platform: 'wb',
+                        saleId: saleId,
+                        date: sale.date,
+                        product: sale.subject,
+                        article: sale.supplierArticle,
+                        nmId: sale.nmId,
+                        price: sale.finishedPrice,
+                        isReturn: saleId.startsWith('R'),
+                        updatedAt: serverTimestamp()
+                      }, { merge: true });
+                      
+                      count++;
+                      totalSalesFetched++;
+                      if (count === 400) {
+                        await batch.commit();
+                        count = 0;
+                      }
+                    }
+                    if (count > 0) {
+                      await batch.commit();
+                    }
+                    
+                    if (sales.length === 100000) {
+                      currentSalesDateStr = sales[sales.length - 1].date;
+                    } else {
+                      hasMoreSales = false;
+                    }
+                  } else {
+                    hasMoreSales = false;
+                  }
+                }
+                if (totalSalesFetched > 0) {
+                  console.log(`Fetched and saved ${totalSalesFetched} WB sales for user ${userDoc.id} with token ${token.substring(0, 10)}...`);
+                }
+              } catch (err: any) {
+                if (err.response?.status === 401) {
+                  console.warn(`WB API Token ${token.substring(0, 10)}... is invalid or expired for sales. Skipping.`);
+                } else {
+                  console.error(`Error fetching WB sales for token ${token.substring(0, 10)}...:`, err.message);
+                }
+              }
+            }
+            
+            // Aggregate stats after fetching for this user
+            await aggregateUserStats(userDoc.id);
+            
+          } catch (err: any) {
+            console.error(`Error in WB sales fetch loop for user ${userDoc.id}:`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error in fetchWbSales loop:', err);
     }
   };
 
@@ -2276,12 +2485,14 @@ async function startServer() {
 
   // Run WB fetcher shortly after startup (recent)
   setTimeout(() => fetchWbOrders(2), 10000);
+  setTimeout(() => fetchWbSales(2), 12000);
   setTimeout(() => fetchOzonOrders(2), 15000);
   
   // Every 2 minutes fetch recent orders (last 2 days)
   cron.schedule('*/2 * * * *', () => {
     console.log('Running 2-min WB/Ozon fetch (recent)');
     fetchWbOrders(2);
+    fetchWbSales(2);
     fetchOzonOrders(2);
   });
 
@@ -2289,6 +2500,7 @@ async function startServer() {
   cron.schedule('0 23 * * *', () => {
     console.log('Running nightly WB/Ozon fetch (all time)');
     fetchWbOrders(3000);
+    fetchWbSales(3000);
     fetchOzonOrders(365);
   });
 

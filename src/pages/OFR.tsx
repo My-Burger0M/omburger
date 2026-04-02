@@ -25,7 +25,7 @@ interface CostSetting {
 interface CostItem {
   id: string;
   name: string;
-  price: number;
+  quantity: number;
   costSettingId: string;
 }
 
@@ -52,7 +52,7 @@ export default function OFR() {
   const [editingCostGroupId, setEditingCostGroupId] = useState<string | null>(null);
   const [editingCostGroupData, setEditingCostGroupData] = useState<CostGroup | null>(null);
   const [newCostItemName, setNewCostItemName] = useState('');
-  const [newCostItemPrice, setNewCostItemPrice] = useState('');
+  const [newCostItemQuantity, setNewCostItemQuantity] = useState('');
   const [newCostItemSettingId, setNewCostItemSettingId] = useState('');
 
   useEffect(() => {
@@ -274,7 +274,7 @@ export default function OFR() {
     setEditingCostGroupId(null);
     setEditingCostGroupData(null);
     setNewCostItemName('');
-    setNewCostItemPrice('');
+    setNewCostItemQuantity('');
     setNewCostItemSettingId('');
   };
 
@@ -291,7 +291,7 @@ export default function OFR() {
       setEditingCostGroupId(null);
       setEditingCostGroupData(null);
       setNewCostItemName('');
-      setNewCostItemPrice('');
+      setNewCostItemQuantity('');
       setNewCostItemSettingId('');
     } catch (error) {
       console.error('Error saving cost group:', error);
@@ -299,10 +299,10 @@ export default function OFR() {
   };
 
   const handleAddCostItem = () => {
-    if (!editingCostGroupData || !newCostItemName.trim() || !newCostItemPrice.trim() || !newCostItemSettingId) return;
+    if (!editingCostGroupData || !newCostItemName.trim() || !newCostItemQuantity.trim() || !newCostItemSettingId) return;
     
-    const price = parseFloat(newCostItemPrice.replace(/\s/g, ''));
-    if (isNaN(price)) return;
+    const quantity = parseFloat(newCostItemQuantity.replace(/\s/g, ''));
+    if (isNaN(quantity)) return;
 
     setEditingCostGroupData({
       ...editingCostGroupData,
@@ -311,13 +311,13 @@ export default function OFR() {
         {
           id: Date.now().toString(),
           name: newCostItemName.trim(),
-          price: price,
+          quantity: quantity,
           costSettingId: newCostItemSettingId
         }
       ]
     });
     setNewCostItemName('');
-    setNewCostItemPrice('');
+    setNewCostItemQuantity('');
     setNewCostItemSettingId('');
   };
 
@@ -329,16 +329,16 @@ export default function OFR() {
     });
   };
 
-  const handleUpdateCostItem = (itemId: string, field: 'name' | 'price' | 'costSettingId', value: string) => {
+  const handleUpdateCostItem = (itemId: string, field: 'name' | 'quantity' | 'costSettingId', value: string) => {
     if (!editingCostGroupData) return;
     
     setEditingCostGroupData({
       ...editingCostGroupData,
       items: editingCostGroupData.items.map(item => {
         if (item.id === itemId) {
-          if (field === 'price') {
+          if (field === 'quantity') {
             const numValue = parseFloat(value.replace(/\s/g, ''));
-            return { ...item, price: isNaN(numValue) ? 0 : numValue };
+            return { ...item, quantity: isNaN(numValue) ? 0 : numValue };
           }
           return { ...item, [field]: value };
         }
@@ -351,14 +351,14 @@ export default function OFR() {
     return items.reduce((sum, item) => sum + item.amount, 0);
   };
 
-  const calculateCostProfit = (item: CostItem) => {
+  const calculateCostTotal = (item: CostItem) => {
     const setting = costSettings.find(s => s.id === item.costSettingId);
     const cost = setting ? setting.totalCost : 0;
-    return item.price - cost;
+    return item.quantity * cost;
   };
 
-  const calculateTotalCostProfit = (items: CostItem[]) => {
-    return items.reduce((sum, item) => sum + calculateCostProfit(item), 0);
+  const calculateTotalCost = (items: CostItem[]) => {
+    return items.reduce((sum, item) => sum + calculateCostTotal(item), 0);
   };
 
   const formatCurrency = (value: number) => {
@@ -543,14 +543,14 @@ export default function OFR() {
                       placeholder="Название расчета:"
                     />
                     <div className="bg-[#2a2a2a] border border-white/5 rounded-xl px-6 py-4 flex items-center justify-center min-w-[200px]">
-                      <span className="text-gray-400 mr-2">Итого профит:</span>
-                      <span className="text-xl font-bold text-green-400">{formatCurrency(calculateTotalCostProfit(editingCostGroupData.items))}</span>
+                      <span className="text-gray-400 mr-2">Итого себестоимость:</span>
+                      <span className="text-xl font-bold text-red-400">{formatCurrency(calculateTotalCost(editingCostGroupData.items))}</span>
                     </div>
                   </div>
 
                   <div className="space-y-3 mt-6">
                     {editingCostGroupData.items.map(item => {
-                      const profit = calculateCostProfit(item);
+                      const totalCost = calculateCostTotal(item);
                       return (
                         <div key={item.id} className="flex gap-3 items-center">
                           <input
@@ -562,10 +562,10 @@ export default function OFR() {
                           />
                           <input
                             type="text"
-                            value={item.price}
-                            onChange={(e) => handleUpdateCostItem(item.id, 'price', e.target.value)}
+                            value={item.quantity}
+                            onChange={(e) => handleUpdateCostItem(item.id, 'quantity', e.target.value)}
                             className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            placeholder="Цена"
+                            placeholder="Количество"
                           />
                           <select
                             value={item.costSettingId}
@@ -579,8 +579,8 @@ export default function OFR() {
                               </option>
                             ))}
                           </select>
-                          <div className={`w-32 text-right font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {formatCurrency(profit)}
+                          <div className={`w-32 text-right font-bold text-red-400`}>
+                            {formatCurrency(totalCost)}
                           </div>
                           <button
                             onClick={() => handleDeleteCostItem(item.id)}
@@ -604,11 +604,11 @@ export default function OFR() {
                       />
                       <input
                         type="text"
-                        value={newCostItemPrice}
-                        onChange={(e) => setNewCostItemPrice(e.target.value)}
+                        value={newCostItemQuantity}
+                        onChange={(e) => setNewCostItemQuantity(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAddCostItem()}
                         className="flex-1 bg-[#2a2a2a] border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="Цена"
+                        placeholder="Количество"
                       />
                       <select
                         value={newCostItemSettingId}
@@ -625,7 +625,7 @@ export default function OFR() {
                       <div className="w-32"></div>
                       <button
                         onClick={handleAddCostItem}
-                        disabled={!newCostItemName.trim() || !newCostItemPrice.trim() || !newCostItemSettingId}
+                        disabled={!newCostItemName.trim() || !newCostItemQuantity.trim() || !newCostItemSettingId}
                         className="bg-green-700 hover:bg-green-600 text-white p-3 rounded-xl transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus size={20} />
@@ -654,7 +654,7 @@ export default function OFR() {
                   <div className="text-lg font-medium pl-4">{group.title}</div>
                   <div className="flex items-center gap-4">
                     <div className="bg-[#2a2a2a] px-6 py-3 rounded-xl text-gray-300">
-                      Итого профит: <span className="font-bold text-green-400">{formatCurrency(calculateTotalCostProfit(group.items))}</span>
+                      Итого себестоимость: <span className="font-bold text-red-400">{formatCurrency(calculateTotalCost(group.items))}</span>
                     </div>
                     
                     <button

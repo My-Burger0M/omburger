@@ -352,7 +352,7 @@ export default function Products() {
                   <div className="text-xl font-medium text-white">{product.costPrice} ₽</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-gray-500 text-sm">Заказов:</div>
+                  <div className="text-gray-500 text-sm">Выкупили:</div>
                   <div className="text-xl font-medium text-white">{product.salesPercent || 0} шт.</div>
                 </div>
               </div>

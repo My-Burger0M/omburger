@@ -19,6 +19,8 @@ interface MonthData {
   costPrice: number;
   total: number;
   createdAt: any;
+  ofrExpenseGroupId?: string;
+  ofrCostGroupId?: string;
 }
 
 export default function UnitEconomy() {
@@ -47,11 +49,89 @@ export default function UnitEconomy() {
   // Edit state
   const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
 
+  // OFR Data
+  const [ofrExpenseGroups, setOfrExpenseGroups] = useState<{id: string, title: string, total: number}[]>([]);
+  const [ofrCostGroups, setOfrCostGroups] = useState<{id: string, title: string, total: number}[]>([]);
+  
+  const [selectedExpenseGroupId, setSelectedExpenseGroupId] = useState<string>('all');
+  const [selectedCostGroupId, setSelectedCostGroupId] = useState<string>('all');
+
   useEffect(() => {
     if (currentUser) {
       fetchData();
+      
+      // Listen to OFR Expenses
+      const unsubscribeExpenses = onSnapshot(
+        collection(db, 'users', currentUser.uid, 'ofr_expenses'),
+        (snapshot) => {
+          const groups: {id: string, title: string, total: number}[] = [];
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            let total = 0;
+            if (data.items && Array.isArray(data.items)) {
+              total = data.items.reduce((sum: number, item: any) => sum + (Number(item.amount) || 0), 0);
+            }
+            groups.push({ id: doc.id, title: data.title || 'Без названия', total });
+          });
+          setOfrExpenseGroups(groups);
+        }
+      );
+
+      // Listen to Cost Settings and OFR Costs
+      const unsubscribeCostSettings = onSnapshot(
+        collection(db, 'users', currentUser.uid, 'costSettings'),
+        (settingsSnapshot) => {
+          const settingsMap: Record<string, number> = {};
+          settingsSnapshot.forEach(doc => {
+            settingsMap[doc.id] = doc.data().totalCost || 0;
+          });
+
+          const unsubscribeCosts = onSnapshot(
+            collection(db, 'users', currentUser.uid, 'ofr_costs'),
+            (costsSnapshot) => {
+              const groups: {id: string, title: string, total: number}[] = [];
+              costsSnapshot.forEach(doc => {
+                const data = doc.data();
+                let total = 0;
+                if (data.items && Array.isArray(data.items)) {
+                  total = data.items.reduce((sum: number, item: any) => {
+                    const cost = settingsMap[item.costSettingId] || 0;
+                    return sum + (Number(item.quantity) || 0) * cost;
+                  }, 0);
+                }
+                groups.push({ id: doc.id, title: data.title || 'Без названия', total });
+              });
+              setOfrCostGroups(groups);
+            }
+          );
+          return () => unsubscribeCosts();
+        }
+      );
+
+      return () => {
+        unsubscribeExpenses();
+        unsubscribeCostSettings();
+      };
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (selectedExpenseGroupId === 'all') {
+      const total = ofrExpenseGroups.reduce((sum, g) => sum + g.total, 0);
+      setCalcMpExpenses(total || '');
+    } else {
+      const group = ofrExpenseGroups.find(g => g.id === selectedExpenseGroupId);
+      if (group) setCalcMpExpenses(group.total || '');
+    }
+
+    if (selectedCostGroupId === 'all') {
+      const total = ofrCostGroups.reduce((sum, g) => sum + g.total, 0);
+      setCalcCostPrice(total || '');
+    } else {
+      const group = ofrCostGroups.find(g => g.id === selectedCostGroupId);
+      if (group) setCalcCostPrice(group.total || '');
+    }
+  }, [ofrExpenseGroups, ofrCostGroups, selectedExpenseGroupId, selectedCostGroupId]);
 
   const fetchData = async () => {
     if (!currentUser) return;
@@ -109,6 +189,8 @@ export default function UnitEconomy() {
       mpExpenses,
       costPrice,
       total,
+      ofrExpenseGroupId: selectedExpenseGroupId,
+      ofrCostGroupId: selectedCostGroupId,
       updatedAt: serverTimestamp()
     };
 
@@ -128,8 +210,8 @@ export default function UnitEconomy() {
       // Reset calculator
       setCalcMonth('');
       setCalcRevenue('');
-      setCalcMpExpenses('');
-      setCalcCostPrice('');
+      setSelectedExpenseGroupId('all');
+      setSelectedCostGroupId('all');
     } catch (error) {
       console.error('Error saving month:', error);
     }
@@ -139,8 +221,8 @@ export default function UnitEconomy() {
     setEditingMonthId(month.id);
     setCalcMonth(month.monthName);
     setCalcRevenue(month.revenue);
-    setCalcMpExpenses(month.mpExpenses);
-    setCalcCostPrice(month.costPrice);
+    setSelectedExpenseGroupId(month.ofrExpenseGroupId || 'all');
+    setSelectedCostGroupId(month.ofrCostGroupId || 'all');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -159,14 +241,30 @@ export default function UnitEconomy() {
   };
 
   const dynamicMonths = months.map(m => {
-    const dynamicTotal = m.revenue - m.mpExpenses - m.costPrice;
-    return { ...m, dynamicTotal };
+    let dynamicMpExpenses = m.mpExpenses || 0;
+    if (m.ofrExpenseGroupId === 'all') {
+      dynamicMpExpenses = ofrExpenseGroups.reduce((sum, g) => sum + g.total, 0);
+    } else if (m.ofrExpenseGroupId) {
+      const group = ofrExpenseGroups.find(g => g.id === m.ofrExpenseGroupId);
+      if (group) dynamicMpExpenses = group.total;
+    }
+
+    let dynamicCostPrice = m.costPrice || 0;
+    if (m.ofrCostGroupId === 'all') {
+      dynamicCostPrice = ofrCostGroups.reduce((sum, g) => sum + g.total, 0);
+    } else if (m.ofrCostGroupId) {
+      const group = ofrCostGroups.find(g => g.id === m.ofrCostGroupId);
+      if (group) dynamicCostPrice = group.total;
+    }
+
+    const dynamicTotal = m.revenue - dynamicMpExpenses - dynamicCostPrice;
+    return { ...m, dynamicMpExpenses, dynamicCostPrice, dynamicTotal };
   });
 
   const totalAllTime = dynamicMonths.reduce((acc, month) => {
     acc.revenue += month.revenue || 0;
-    acc.mpExpenses += month.mpExpenses || 0;
-    acc.costPrice += month.costPrice || 0;
+    acc.mpExpenses += month.dynamicMpExpenses || 0;
+    acc.costPrice += month.dynamicCostPrice || 0;
     acc.total += month.dynamicTotal || 0;
     return acc;
   }, { revenue: 0, mpExpenses: 0, costPrice: 0, total: 0 });
@@ -295,29 +393,33 @@ export default function UnitEconomy() {
               
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Расходы МП:</label>
-                <div className="relative">
-                  <input 
-                    type="number"
-                    value={calcMpExpenses}
-                    onChange={(e) => setCalcMpExpenses(Number(e.target.value))}
+                <div className="flex gap-2 mb-2">
+                  <select
+                    value={selectedExpenseGroupId}
+                    onChange={(e) => setSelectedExpenseGroupId(e.target.value)}
                     className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
-                    placeholder="100000"
-                  />
-                  <span className="absolute right-4 top-3 text-gray-500">₽</span>
+                  >
+                    <option value="all">Все расходы ОФР</option>
+                    {ofrExpenseGroups.map(g => (
+                      <option key={g.id} value={g.id}>{g.title} ({formatCurrency(g.total)})</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Себестоимость:</label>
-                <div className="relative">
-                  <input 
-                    type="number"
-                    value={calcCostPrice}
-                    onChange={(e) => setCalcCostPrice(Number(e.target.value))}
+                <div className="flex gap-2 mb-2">
+                  <select
+                    value={selectedCostGroupId}
+                    onChange={(e) => setSelectedCostGroupId(e.target.value)}
                     className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
-                    placeholder="100000"
-                  />
-                  <span className="absolute right-4 top-3 text-gray-500">₽</span>
+                  >
+                    <option value="all">Вся себестоимость ОФР</option>
+                    {ofrCostGroups.map(g => (
+                      <option key={g.id} value={g.id}>{g.title} ({formatCurrency(g.total)})</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -388,11 +490,11 @@ export default function UnitEconomy() {
               </div>
               <div className="flex justify-between items-center bg-[#222] p-2.5 rounded-lg border border-white/5 text-sm">
                 <span className="text-gray-400">Расходы МП:</span>
-                <span className="font-medium">{formatCurrency(month.mpExpenses)}</span>
+                <span className="font-medium">{formatCurrency(month.dynamicMpExpenses)}</span>
               </div>
               <div className="flex justify-between items-center bg-[#222] p-2.5 rounded-lg border border-white/5 text-sm">
                 <span className="text-gray-400">Себе-сть:</span>
-                <span className="font-medium">{formatCurrency(month.costPrice)}</span>
+                <span className="font-medium">{formatCurrency(month.dynamicCostPrice)}</span>
               </div>
               <div className="flex justify-between items-center bg-[#222] p-2.5 rounded-lg border border-white/5 text-sm mt-4">
                 <span className="text-gray-300 font-medium">Итого:</span>
@@ -408,8 +510,8 @@ export default function UnitEconomy() {
             setEditingMonthId(null);
             setCalcMonth('');
             setCalcRevenue('');
-            setCalcMpExpenses('');
-            setCalcCostPrice('');
+            setSelectedExpenseGroupId('all');
+            setSelectedCostGroupId('all');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           className="bg-[#1a1a1a] rounded-2xl border border-dashed border-white/20 p-6 flex flex-col items-center justify-center text-gray-400 hover:text-white hover:border-purple-500 hover:bg-purple-500/5 transition-all cursor-pointer min-h-[300px]"
