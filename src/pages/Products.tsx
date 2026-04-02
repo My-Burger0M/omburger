@@ -18,6 +18,8 @@ interface Product {
   apiWb?: string;
   apiOzon?: string;
   salesPercent: number;
+  revenue?: number;
+  profit?: number;
 }
 
 interface CostSetting {
@@ -40,6 +42,8 @@ export default function Products() {
   
   // Stats
   const [stats, setStats] = useState({ total: 0, wb: 0, ozon: 0 });
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [timeUntilNextSync, setTimeUntilNextSync] = useState<string>('');
   
   // Form State
   const [newProduct, setNewProduct] = useState({
@@ -78,6 +82,9 @@ export default function Products() {
           wb: data.total?.wb || 0,
           ozon: data.total?.ozon || 0
         });
+        if (data.updatedAt) {
+          setLastSyncTime(data.updatedAt.toDate());
+        }
       }
     });
     
@@ -135,8 +142,35 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
+  useEffect(() => {
+    if (!lastSyncTime) return;
+    
+    const interval = setInterval(() => {
+      const now = new Date();
+      const diffMs = now.getTime() - lastSyncTime.getTime();
+      const cooldownMs = 15 * 60 * 1000; // 15 minutes
+      
+      if (diffMs < cooldownMs) {
+        const remainingMs = cooldownMs - diffMs;
+        const minutes = Math.floor(remainingMs / 60000);
+        const seconds = Math.floor((remainingMs % 60000) / 1000);
+        setTimeUntilNextSync(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setTimeUntilNextSync('');
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [lastSyncTime]);
+
   const handleSync = async () => {
     if (!currentUser) return;
+    
+    if (timeUntilNextSync) {
+      alert(`Синхронизация доступна через ${timeUntilNextSync}`);
+      return;
+    }
+    
     setIsSyncing(true);
     try {
       // Import axios at the top of the file if not already imported
@@ -241,11 +275,17 @@ export default function Products() {
         </div>
         <button 
           onClick={handleSync}
-          disabled={isSyncing}
-          className="bg-[#1a1a1a] border border-white/10 hover:bg-[#2a2a2a] text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"
+          disabled={isSyncing || !!timeUntilNextSync}
+          className={`border px-4 py-2 rounded-xl flex items-center gap-2 transition-colors ${
+            timeUntilNextSync 
+              ? 'bg-[#1a1a1a] border-white/5 text-gray-500 cursor-not-allowed' 
+              : 'bg-[#1a1a1a] border-white/10 hover:bg-[#2a2a2a] text-white disabled:opacity-50'
+          }`}
         >
           <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
-          <span className="hidden sm:inline">{isSyncing ? 'Обновление...' : 'Обновить данные'}</span>
+          <span className="hidden sm:inline">
+            {isSyncing ? 'Обновление...' : timeUntilNextSync ? `Доступно через ${timeUntilNextSync}` : 'Обновить данные'}
+          </span>
         </button>
       </div>
 
@@ -356,6 +396,20 @@ export default function Products() {
                   <div className="text-xl font-medium text-white">{product.salesPercent || 0} шт.</div>
                 </div>
               </div>
+              
+              <div className="flex justify-between items-start pt-2 border-t border-white/5 mt-2">
+                <div>
+                  <div className="text-gray-500 text-sm">Выручка:</div>
+                  <div className="text-lg font-medium text-green-400">{product.revenue ? Math.round(product.revenue).toLocaleString('ru-RU') : 0} ₽</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-gray-500 text-sm">Профит:</div>
+                  <div className={`text-lg font-medium ${product.profit && product.profit > 0 ? 'text-purple-400' : product.profit && product.profit < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {product.profit ? Math.round(product.profit).toLocaleString('ru-RU') : 0} ₽
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end gap-1 mt-2">
                 {product.apiWb && (
                   <div className="w-6 h-6 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center text-xs font-bold border border-purple-500/30" title="WB API подключен">W</div>

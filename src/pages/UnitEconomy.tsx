@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Calculator, DollarSign, ShoppingBag, Package, Link as LinkIcon } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calculator, DollarSign, ShoppingBag, Package, Link as LinkIcon, ChevronDown, Check, TrendingUp } from 'lucide-react';
 
 interface GlobalStats {
   wbPurchases: number;
@@ -48,6 +48,20 @@ export default function UnitEconomy() {
 
   // Edit state
   const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
+  
+  // Custom dropdown state
+  const [openDropdown, setOpenDropdown] = useState<'mp' | 'cost' | null>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (openDropdown) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openDropdown]);
 
   // OFR Data
   const [ofrExpenseGroups, setOfrExpenseGroups] = useState<{id: string, title: string, total: number}[]>([]);
@@ -79,7 +93,7 @@ export default function UnitEconomy() {
 
       // Listen to Cost Settings and OFR Costs
       const unsubscribeCostSettings = onSnapshot(
-        collection(db, 'users', currentUser.uid, 'costSettings'),
+        collection(db, 'users', currentUser.uid, 'cost_settings'),
         (settingsSnapshot) => {
           const settingsMap: Record<string, number> = {};
           settingsSnapshot.forEach(doc => {
@@ -359,83 +373,159 @@ export default function UnitEconomy() {
       {/* Middle Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calculator */}
-        <div className="lg:col-span-2 bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-            <Calculator size={20} className="text-purple-500" />
-            Калькулятор валовой прибыли
-          </h2>
+        <div className="lg:col-span-2 bg-gradient-to-br from-[#1a1a1a] to-[#222] rounded-3xl border border-white/10 p-8 shadow-2xl relative overflow-hidden">
+          {/* Decorative background element */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
           
-          <div className="space-y-6">
-            <div className="w-1/3">
+          <div className="flex items-center justify-between mb-8 relative z-10">
+            <h2 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-3 bg-purple-500/20 rounded-xl">
+                <Calculator size={24} className="text-purple-400" />
+              </div>
+              Калькулятор валовой прибыли
+            </h2>
+          </div>
+          
+          <div className="space-y-8 relative z-10">
+            <div className="w-full md:w-1/2">
+              <label className="block text-sm font-medium text-gray-400 mb-2">Название месяца</label>
               <input 
                 type="text"
                 value={calcMonth}
                 onChange={(e) => setCalcMonth(e.target.value)}
                 placeholder="Например: Март 2026"
-                className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600"
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Выручка:</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-black/20 p-5 rounded-2xl border border-white/5">
+                <label className="block text-sm font-medium text-gray-400 mb-3">Выручка</label>
                 <div className="relative">
                   <input 
                     type="number"
                     value={calcRevenue}
                     onChange={(e) => setCalcRevenue(Number(e.target.value))}
-                    className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
-                    placeholder="100000"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+                    placeholder="0"
                   />
-                  <span className="absolute right-4 top-3 text-gray-500">₽</span>
+                  <span className="absolute right-4 top-3.5 text-gray-500 font-medium">₽</span>
                 </div>
               </div>
               
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Расходы МП:</label>
-                <div className="flex gap-2 mb-2">
-                  <select
-                    value={selectedExpenseGroupId}
-                    onChange={(e) => setSelectedExpenseGroupId(e.target.value)}
-                    className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
-                  >
-                    <option value="all">Все расходы ОФР</option>
-                    {ofrExpenseGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.title} ({formatCurrency(g.total)})</option>
-                    ))}
-                  </select>
+              <div className="bg-black/20 p-5 rounded-2xl border border-white/5 relative">
+                <label className="block text-sm font-medium text-gray-400 mb-3">Расходы МП</label>
+                
+                <div 
+                  className="relative"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenDropdown(openDropdown === 'mp' ? null : 'mp');
+                  }}
+                >
+                  <div className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white cursor-pointer flex items-center justify-between hover:border-purple-500/50 transition-all">
+                    <span className="truncate pr-4">
+                      {selectedExpenseGroupId === 'all' 
+                        ? 'Все расходы ОФР' 
+                        : ofrExpenseGroups.find(g => g.id === selectedExpenseGroupId)?.title || 'Выберите расходы'}
+                    </span>
+                    <ChevronDown size={18} className={`text-gray-400 transition-transform duration-200 ${openDropdown === 'mp' ? 'rotate-180' : ''}`} />
+                  </div>
+                  
+                  {openDropdown === 'mp' && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#222] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto custom-scrollbar">
+                      <div 
+                        className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-purple-500/10 transition-colors ${selectedExpenseGroupId === 'all' ? 'bg-purple-500/10 text-purple-400' : 'text-white'}`}
+                        onClick={() => setSelectedExpenseGroupId('all')}
+                      >
+                        <span>Все расходы ОФР</span>
+                        {selectedExpenseGroupId === 'all' && <Check size={16} />}
+                      </div>
+                      {ofrExpenseGroups.map(g => (
+                        <div 
+                          key={g.id}
+                          className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-purple-500/10 transition-colors border-t border-white/5 ${selectedExpenseGroupId === g.id ? 'bg-purple-500/10 text-purple-400' : 'text-white'}`}
+                          onClick={() => setSelectedExpenseGroupId(g.id)}
+                        >
+                          <div className="flex flex-col">
+                            <span>{g.title}</span>
+                            <span className="text-xs text-gray-400">{formatCurrency(g.total)}</span>
+                          </div>
+                          {selectedExpenseGroupId === g.id && <Check size={16} />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 text-right text-sm text-gray-500">
+                  Сумма: <span className="text-white font-medium">{formatCurrency(Number(calcMpExpenses) || 0)}</span>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Себестоимость:</label>
-                <div className="flex gap-2 mb-2">
-                  <select
-                    value={selectedCostGroupId}
-                    onChange={(e) => setSelectedCostGroupId(e.target.value)}
-                    className="w-full bg-[#222] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
-                  >
-                    <option value="all">Вся себестоимость ОФР</option>
-                    {ofrCostGroups.map(g => (
-                      <option key={g.id} value={g.id}>{g.title} ({formatCurrency(g.total)})</option>
-                    ))}
-                  </select>
+              <div className="bg-black/20 p-5 rounded-2xl border border-white/5 relative">
+                <label className="block text-sm font-medium text-gray-400 mb-3">Себестоимость</label>
+                
+                <div 
+                  className="relative"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenDropdown(openDropdown === 'cost' ? null : 'cost');
+                  }}
+                >
+                  <div className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white cursor-pointer flex items-center justify-between hover:border-purple-500/50 transition-all">
+                    <span className="truncate pr-4">
+                      {selectedCostGroupId === 'all' 
+                        ? 'Вся себестоимость ОФР' 
+                        : ofrCostGroups.find(g => g.id === selectedCostGroupId)?.title || 'Выберите себестоимость'}
+                    </span>
+                    <ChevronDown size={18} className={`text-gray-400 transition-transform duration-200 ${openDropdown === 'cost' ? 'rotate-180' : ''}`} />
+                  </div>
+                  
+                  {openDropdown === 'cost' && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#222] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto custom-scrollbar">
+                      <div 
+                        className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-purple-500/10 transition-colors ${selectedCostGroupId === 'all' ? 'bg-purple-500/10 text-purple-400' : 'text-white'}`}
+                        onClick={() => setSelectedCostGroupId('all')}
+                      >
+                        <span>Вся себестоимость ОФР</span>
+                        {selectedCostGroupId === 'all' && <Check size={16} />}
+                      </div>
+                      {ofrCostGroups.map(g => (
+                        <div 
+                          key={g.id}
+                          className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-purple-500/10 transition-colors border-t border-white/5 ${selectedCostGroupId === g.id ? 'bg-purple-500/10 text-purple-400' : 'text-white'}`}
+                          onClick={() => setSelectedCostGroupId(g.id)}
+                        >
+                          <div className="flex flex-col">
+                            <span>{g.title}</span>
+                            <span className="text-xs text-gray-400">{formatCurrency(g.total)}</span>
+                          </div>
+                          {selectedCostGroupId === g.id && <Check size={16} />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 text-right text-sm text-gray-500">
+                  Сумма: <span className="text-white font-medium">{formatCurrency(Number(calcCostPrice) || 0)}</span>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">Итого:</label>
-                <div className="w-full bg-green-500/20 border border-green-500/30 rounded-xl px-4 py-3 text-green-400 font-bold flex justify-between items-center">
-                  <span>{formatCurrency((Number(calcRevenue) || 0) - (Number(calcMpExpenses) || 0) - (Number(calcCostPrice) || 0))}</span>
+              <div className="bg-purple-500/10 p-5 rounded-2xl border border-purple-500/20 flex flex-col justify-center">
+                <label className="block text-sm font-medium text-purple-400/80 mb-2">Итоговая валовая прибыль</label>
+                <div className="text-3xl font-bold text-white">
+                  {formatCurrency((Number(calcRevenue) || 0) - (Number(calcMpExpenses) || 0) - (Number(calcCostPrice) || 0))}
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end pt-4 border-t border-white/5">
               <button 
                 onClick={handleSaveMonth}
                 disabled={!calcMonth}
-                className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-medium transition-colors"
+                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg shadow-purple-500/20 flex items-center gap-2"
               >
                 {editingMonthId ? 'Сохранить изменения' : 'Добавить месяц'}
               </button>
@@ -444,25 +534,41 @@ export default function UnitEconomy() {
         </div>
 
         {/* Total All Time */}
-        <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 flex flex-col justify-center">
-          <h2 className="text-lg font-bold mb-6 text-gray-300">Итого за всё время:</h2>
+        <div className="bg-gradient-to-b from-[#1a1a1a] to-[#111] rounded-3xl border border-white/10 p-8 flex flex-col justify-between relative overflow-hidden shadow-xl">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
           
-          <div className="space-y-4">
-            <div className="flex justify-between items-center bg-[#222] p-3 rounded-xl border border-white/5">
-              <span className="text-gray-400">Выручка:</span>
-              <span className="font-medium">{formatCurrency(totalAllTime.revenue)}</span>
+          <div>
+            <h2 className="text-xl font-bold mb-8 text-white flex items-center gap-3">
+              <div className="p-2.5 bg-green-500/20 rounded-lg">
+                <TrendingUp size={20} className="text-green-400" />
+              </div>
+              Итого за всё время
+            </h2>
+            
+            <div className="space-y-4 relative z-10">
+              <div className="flex justify-between items-center group">
+                <span className="text-gray-400 group-hover:text-gray-300 transition-colors">Выручка</span>
+                <span className="font-medium text-white">{formatCurrency(totalAllTime.revenue)}</span>
+              </div>
+              <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+              
+              <div className="flex justify-between items-center group">
+                <span className="text-gray-400 group-hover:text-gray-300 transition-colors">Расходы МП</span>
+                <span className="font-medium text-white">{formatCurrency(totalAllTime.mpExpenses)}</span>
+              </div>
+              <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+              
+              <div className="flex justify-between items-center group">
+                <span className="text-gray-400 group-hover:text-gray-300 transition-colors">Себестоимость</span>
+                <span className="font-medium text-white">{formatCurrency(totalAllTime.costPrice)}</span>
+              </div>
             </div>
-            <div className="flex justify-between items-center bg-[#222] p-3 rounded-xl border border-white/5">
-              <span className="text-gray-400">Расходы МП:</span>
-              <span className="font-medium">{formatCurrency(totalAllTime.mpExpenses)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-[#222] p-3 rounded-xl border border-white/5">
-              <span className="text-gray-400">Себе-сть:</span>
-              <span className="font-medium">{formatCurrency(totalAllTime.costPrice)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-green-500/10 p-3 rounded-xl border border-green-500/20">
-              <span className="text-green-500/80 font-medium">Итого:</span>
-              <span className="text-green-400 font-bold">{formatCurrency(totalAllTime.total)}</span>
+          </div>
+          
+          <div className="mt-8 pt-6 border-t border-white/10 relative z-10">
+            <div className="text-sm text-green-400/80 mb-1 font-medium uppercase tracking-wider">Общая прибыль</div>
+            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-300">
+              {formatCurrency(totalAllTime.total)}
             </div>
           </div>
         </div>

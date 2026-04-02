@@ -1961,18 +1961,38 @@ async function startServer() {
       const productsSnapshot = await getDocs(collection(db, 'users', userId, 'products'));
       const salesSnapshot = await getDocs(collection(db, 'users', userId, 'marketplace_sales'));
       
-      const salesArticleCounts: Record<string, number> = {};
+      const salesArticleCounts: Record<string, { count: number, revenue: number }> = {};
       
       // Count WB sales
       salesSnapshot.forEach(doc => {
         const data = doc.data();
         if (data.saleId) {
+          const article = data.article ? data.article.toString() : null;
+          const nmId = data.nmId ? data.nmId.toString() : null;
+          const revenue = data.forPay || data.price || 0;
+          
+          let increment = 0;
+          let revIncrement = 0;
+          
           if (data.saleId.startsWith('S')) {
-            if (data.article) salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) + 1;
-            if (data.nmId) salesArticleCounts[data.nmId.toString()] = (salesArticleCounts[data.nmId.toString()] || 0) + 1;
+            increment = 1;
+            revIncrement = revenue;
           } else if (data.saleId.startsWith('R')) {
-            if (data.article) salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) - 1;
-            if (data.nmId) salesArticleCounts[data.nmId.toString()] = (salesArticleCounts[data.nmId.toString()] || 0) - 1;
+            increment = -1;
+            revIncrement = -revenue;
+          }
+          
+          if (increment !== 0) {
+            if (article) {
+              if (!salesArticleCounts[article]) salesArticleCounts[article] = { count: 0, revenue: 0 };
+              salesArticleCounts[article].count += increment;
+              salesArticleCounts[article].revenue += revIncrement;
+            }
+            if (nmId && nmId !== article) {
+              if (!salesArticleCounts[nmId]) salesArticleCounts[nmId] = { count: 0, revenue: 0 };
+              salesArticleCounts[nmId].count += increment;
+              salesArticleCounts[nmId].revenue += revIncrement;
+            }
           }
         }
       });
@@ -1981,7 +2001,11 @@ async function startServer() {
       ordersSnapshot.forEach(doc => {
         const data = doc.data();
         if (data.platform === 'ozon' && data.status === 'delivered' && data.article) {
-          salesArticleCounts[data.article] = (salesArticleCounts[data.article] || 0) + 1;
+          const article = data.article.toString();
+          const revenue = data.price || 0;
+          if (!salesArticleCounts[article]) salesArticleCounts[article] = { count: 0, revenue: 0 };
+          salesArticleCounts[article].count += 1;
+          salesArticleCounts[article].revenue += revenue;
         }
       });
 
@@ -1992,8 +2016,19 @@ async function startServer() {
       productsSnapshot.forEach(pDoc => {
         const pData = pDoc.data();
         if (pData.article) {
-          const salesCount = salesArticleCounts[pData.article] || 0;
-          currentBatch.update(pDoc.ref, { salesPercent: salesCount });
+          const articleStr = pData.article.toString();
+          const salesData = salesArticleCounts[articleStr] || { count: 0, revenue: 0 };
+          
+          const salesCount = salesData.count;
+          const revenue = salesData.revenue;
+          const costPrice = pData.costPrice || 0;
+          const profit = revenue - (costPrice * salesCount);
+          
+          currentBatch.update(pDoc.ref, { 
+            salesPercent: salesCount,
+            revenue: revenue,
+            profit: profit
+          });
           count++;
           if (count === 400) {
             batches.push(currentBatch.commit());
@@ -2121,6 +2156,7 @@ async function startServer() {
                   article: sale.supplierArticle,
                   nmId: sale.nmId,
                   price: sale.finishedPrice,
+                  forPay: sale.forPay || sale.finishedPrice,
                   isReturn: saleId.startsWith('R'),
                   updatedAt: serverTimestamp()
                 }, { merge: true });
@@ -2169,6 +2205,28 @@ async function startServer() {
     }
   });
 
+  // Helper to get correct dateFrom for WB API in MSK
+  const getWbDateFrom = (daysBack: number): string => {
+    if (daysBack >= 3000) return '2020-01-01T00:00:00Z';
+    
+    // Get current time
+    const now = new Date();
+    
+    // Convert to MSK
+    const mskString = now.toLocaleString("en-US", {timeZone: "Europe/Moscow"});
+    const mskDate = new Date(mskString);
+    
+    // Set to start of day in MSK (00:00:00)
+    mskDate.setHours(0, 0, 0, 0);
+    
+    // Subtract daysBack + 1 day (24 hours earlier to catch 00:00-03:00 gap)
+    mskDate.setDate(mskDate.getDate() - daysBack - 1);
+    
+    // Convert MSK time back to UTC for the API
+    const utcTime = mskDate.getTime() - (mskDate.getTimezoneOffset() * 60000) - (3 * 3600000);
+    return new Date(utcTime).toISOString();
+  };
+
   // --- WB Orders Fetcher ---
   const fetchWbOrders = async (daysBack: number = 3000) => {
     try {
@@ -2193,10 +2251,7 @@ async function startServer() {
         
         if (allWbTokens.size > 0) {
           try {
-            const dateFrom = new Date();
-            dateFrom.setDate(dateFrom.getDate() - daysBack);
-            // Use proper format for WB API
-            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00Z' : dateFrom.toISOString();
+            const dateStr = getWbDateFrom(daysBack);
             
             for (const token of allWbTokens) {
               try {
@@ -2296,10 +2351,7 @@ async function startServer() {
         
         if (allWbTokens.size > 0) {
           try {
-            const dateFrom = new Date();
-            dateFrom.setDate(dateFrom.getDate() - daysBack);
-            // Use proper format for WB API
-            const dateStr = daysBack >= 3000 ? '2020-01-01T00:00:00Z' : dateFrom.toISOString();
+            const dateStr = getWbDateFrom(daysBack);
             
             for (const token of allWbTokens) {
               try {
@@ -2330,6 +2382,7 @@ async function startServer() {
                         article: sale.supplierArticle,
                         nmId: sale.nmId,
                         price: sale.finishedPrice,
+                        forPay: sale.forPay || sale.finishedPrice,
                         isReturn: saleId.startsWith('R'),
                         updatedAt: serverTimestamp()
                       }, { merge: true });
